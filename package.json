@@ -1,0 +1,14 @@
+{
+  "name": "coursair",
+  "version": "1.0.0",
+  "description": "Offline Course Dashboard & Media Player",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mime-types": "^2.1.35"
+  }
+}

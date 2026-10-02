@@ -1,0 +1,11 @@
+1
+00:00:01,000 --> 00:00:04,500
+Welcome to Coursair: Your offline course masterclass!
+
+2
+00:00:05,000 --> 00:00:09,000
+In this series, we cover architecture, deep modules, and real code.
+
+3
+00:00:09,500 --> 00:00:12,000
+Let's dive into setting up our local workspace!
