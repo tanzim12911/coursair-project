@@ -84,6 +84,9 @@ const closeCourseModalBtn = document.getElementById('close-course-modal-btn');
 const addCourseNavBtn = document.getElementById('add-course-nav-btn');
 const coursePathInput = document.getElementById('course-path-input');
 const submitAddCourseBtn = document.getElementById('submit-add-course-btn');
+const browseFolderDialogBtn = document.getElementById('browse-folder-dialog-btn');
+const browseBtnText = document.getElementById('browse-btn-text');
+const browserFolderInput = document.getElementById('browser-folder-input');
 const quickFolderChips = document.getElementById('quick-folder-chips');
 const modalCoursesList = document.getElementById('modal-courses-list');
 const shortcutsBtn = document.getElementById('shortcuts-btn');
@@ -208,6 +211,204 @@ async function refreshCoursesList() {
   }
 }
 
+// Browser Directory Picker (File System Access API & webkitdirectory)
+async function openBrowserFolderPicker() {
+  if (window.showDirectoryPicker) {
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      await processDirectoryHandle(dirHandle);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // User closed picker
+      console.warn('showDirectoryPicker failed, falling back to input:', err);
+    }
+  }
+
+  // Fallback to standard directory input
+  if (browserFolderInput) {
+    browserFolderInput.value = '';
+    browserFolderInput.click();
+  }
+}
+
+async function processDirectoryHandle(dirHandle) {
+  const fileItems = [];
+  async function scanHandle(handle, currentPath = '') {
+    for await (const entry of handle.values()) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+      if (entry.kind === 'file') {
+        const file = await entry.getFile();
+        fileItems.push({ file, relPath });
+      } else if (entry.kind === 'directory') {
+        await scanHandle(entry, relPath);
+      }
+    }
+  }
+  await scanHandle(dirHandle);
+  buildCourseFromFileItems(dirHandle.name, fileItems);
+}
+
+const EXT_MAP = {
+  video: ['.mp4', '.mkv', '.webm', '.mov', '.m4v', '.avi'],
+  audio: ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'],
+  document: ['.pdf'],
+  note: ['.md', '.txt'],
+  code: ['.js', '.jsx', '.ts', '.tsx', '.py', '.html', '.css', '.json'],
+  archive: ['.zip', '.rar', '.7z'],
+  subtitle: ['.vtt', '.srt']
+};
+
+function getFileTypeByExt(ext) {
+  ext = (ext || '').toLowerCase();
+  for (const [type, exts] of Object.entries(EXT_MAP)) {
+    if (exts.includes(ext)) return type;
+  }
+  return 'other';
+}
+
+function naturalSortCompare(a, b) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function cleanTitleText(str, isFile = false) {
+  let base = str;
+  if (isFile) {
+    const lastDot = str.lastIndexOf('.');
+    if (lastDot > 0) base = str.substring(0, lastDot);
+  }
+  const cleaned = base
+    .replace(/^[\d\s._\-]+/, '') // Strip leading digits and separators
+    .replace(/_/g, ' ')
+    .trim();
+  return cleaned || base;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function buildCourseFromFileItems(courseName, fileItems) {
+  const subtitles = {};
+  fileItems.forEach(item => {
+    const ext = '.' + item.file.name.split('.').pop().toLowerCase();
+    if (ext === '.srt' || ext === '.vtt') {
+      const base = item.file.name.substring(0, item.file.name.lastIndexOf('.')).toLowerCase();
+      subtitles[base] = item.file;
+    }
+  });
+
+  // Build recursive node tree matching actual local folders and subfolders
+  const rootNode = {
+    title: courseName,
+    folderName: '',
+    relPath: '',
+    sections: [],
+    lessons: [],
+    supplementaryFiles: []
+  };
+
+  const folderMap = { '': rootNode };
+
+  function getOrCreateFolder(folderPath) {
+    if (folderMap[folderPath]) return folderMap[folderPath];
+    const parts = folderPath.split('/');
+    const currentName = parts.pop();
+    const parentPath = parts.join('/');
+    const parentNode = getOrCreateFolder(parentPath);
+
+    const folderNode = {
+      title: cleanTitleText(currentName, false),
+      folderName: currentName,
+      relPath: folderPath,
+      sections: [],
+      lessons: [],
+      supplementaryFiles: []
+    };
+
+    folderMap[folderPath] = folderNode;
+    parentNode.sections.push(folderNode);
+    return folderNode;
+  }
+
+  fileItems.forEach(item => {
+    const normalizedPath = item.relPath.replace(/\\/g, '/');
+    const parts = normalizedPath.split('/');
+    const fileName = parts.pop();
+    const folderPath = parts.join('/');
+    const ext = '.' + fileName.split('.').pop().toLowerCase();
+    const type = getFileTypeByExt(ext);
+    if (type === 'subtitle') return;
+
+    const baseName = fileName.substring(0, fileName.lastIndexOf('.')).toLowerCase();
+    const subFile = subtitles[baseName] || null;
+
+    const targetFolder = getOrCreateFolder(folderPath);
+
+    const lessonObj = {
+      title: cleanTitleText(fileName, true),
+      fileName,
+      relPath: item.relPath,
+      ext,
+      type,
+      sizeFormatted: formatBytes(item.file.size),
+      fileObject: item.file,
+      subFileObject: subFile,
+      sectionName: targetFolder.title || 'General'
+    };
+
+    if (type === 'video' || type === 'audio' || type === 'document' || type === 'note') {
+      targetFolder.lessons.push(lessonObj);
+    } else {
+      targetFolder.supplementaryFiles.push(lessonObj);
+    }
+  });
+
+  // Sort sections and lessons naturally at all depths
+  function sortRecursively(node) {
+    node.sections.sort((a, b) => naturalSortCompare(a.folderName, b.folderName));
+    node.lessons.sort((a, b) => naturalSortCompare(a.fileName, b.fileName));
+    node.sections.forEach(s => sortRecursively(s));
+  }
+  sortRecursively(rootNode);
+
+  const courseId = 'local_' + courseName.replace(/[^a-zA-Z0-9_]/g, '_');
+  const storedProgressKey = `coursair_prog_${courseId}`;
+  let savedProgress = { completed: {}, lastWatched: null, notes: [] };
+  try {
+    const raw = localStorage.getItem(storedProgressKey);
+    if (raw) savedProgress = JSON.parse(raw);
+  } catch (e) {}
+
+  state.currentCourse = {
+    id: courseId,
+    name: courseName,
+    path: courseName + ' (Selected from PC)',
+    isLocalFiles: true
+  };
+  state.curriculum = rootNode;
+  state.progress = savedProgress;
+
+  currentCourseTitle.textContent = courseName;
+  closeCourseModal();
+
+  state.allLessonsFlat = [];
+  flattenLessons(state.curriculum);
+
+  renderCurriculum();
+  updateProgressRing();
+  updateStatsTab();
+  renderNotesTab();
+
+  if (state.allLessonsFlat.length > 0) {
+    loadLesson(state.allLessonsFlat[0], 0);
+  }
+}
+
 // Select Active Course
 async function selectCourse(courseId) {
   try {
@@ -252,16 +453,59 @@ async function selectCourse(courseId) {
 
 function flattenLessons(node, sectionName = 'General') {
   if (!node) return;
+  const currentTitle = node.title || sectionName;
   if (node.lessons) {
     node.lessons.forEach(l => {
-      state.allLessonsFlat.push({ ...l, sectionName });
+      state.allLessonsFlat.push({ ...l, sectionName: currentTitle });
+    });
+  }
+  if (node.supplementaryFiles) {
+    node.supplementaryFiles.forEach(f => {
+      state.allLessonsFlat.push({ ...f, sectionName: currentTitle });
     });
   }
   if (node.sections) {
     node.sections.forEach(s => {
-      flattenLessons(s, s.title);
+      flattenLessons(s, s.title || currentTitle);
     });
   }
+}
+
+function nodeMatchesQuery(node, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  if (node.title && node.title.toLowerCase().includes(q)) return true;
+  if (node.folderName && node.folderName.toLowerCase().includes(q)) return true;
+  if (node.lessons && node.lessons.some(l => (l.title && l.title.toLowerCase().includes(q)) || (l.fileName && l.fileName.toLowerCase().includes(q)))) return true;
+  if (node.supplementaryFiles && node.supplementaryFiles.some(f => (f.title && f.title.toLowerCase().includes(q)) || (f.fileName && f.fileName.toLowerCase().includes(q)))) return true;
+  if (node.sections && node.sections.some(s => nodeMatchesQuery(s, q))) return true;
+  return false;
+}
+
+function getSubtreeLessonCounts(node) {
+  let total = node.lessons ? node.lessons.length : 0;
+  let completed = 0;
+  if (node.lessons && state.progress.completed) {
+    node.lessons.forEach(l => {
+      if (state.progress.completed[l.relPath]) completed++;
+    });
+  }
+  if (node.sections) {
+    node.sections.forEach(sub => {
+      const subCounts = getSubtreeLessonCounts(sub);
+      total += subCounts.total;
+      completed += subCounts.completed;
+    });
+  }
+  return { total, completed };
+}
+
+function containsActiveLesson(node) {
+  if (!state.activeLesson) return false;
+  if (node.lessons && node.lessons.some(l => l.relPath === state.activeLesson.relPath)) return true;
+  if (node.supplementaryFiles && node.supplementaryFiles.some(f => f.relPath === state.activeLesson.relPath)) return true;
+  if (node.sections && node.sections.some(s => containsActiveLesson(s))) return true;
+  return false;
 }
 
 // Render Curriculum Tree
@@ -273,80 +517,128 @@ function renderCurriculum(filterQuery = '') {
 
   // Render top-level root lessons if any
   if (state.curriculum.lessons && state.curriculum.lessons.length > 0) {
-    const rootSecEl = createSectionElement('Root Content', state.curriculum.lessons, query, true);
-    if (rootSecEl) curriculumList.appendChild(rootSecEl);
+    const rootNode = {
+      title: 'Course Overview & Notes',
+      folderName: '',
+      relPath: '',
+      lessons: state.curriculum.lessons,
+      supplementaryFiles: state.curriculum.supplementaryFiles || [],
+      sections: []
+    };
+    const rootEl = createSectionElement(rootNode, query, 0, true);
+    if (rootEl) curriculumList.appendChild(rootEl);
   }
 
   // Render sections
   if (state.curriculum.sections) {
     state.curriculum.sections.forEach((section, idx) => {
-      const secEl = createSectionElement(section.title, section.lessons, query, idx === 0, section.supplementaryFiles);
+      const containsActive = containsActiveLesson(section);
+      const isExpanded = containsActive || (idx === 0 && !state.activeLesson);
+      const secEl = createSectionElement(section, query, 0, isExpanded);
       if (secEl) curriculumList.appendChild(secEl);
     });
   }
 }
 
-function createSectionElement(title, lessons = [], query = '', defaultExpanded = false, supplementaryFiles = []) {
-  const filteredLessons = lessons.filter(l => !query || l.title.toLowerCase().includes(query) || l.fileName.toLowerCase().includes(query));
-
-  if (query && filteredLessons.length === 0) {
+function createSectionElement(sectionNode, query = '', depth = 0, defaultExpanded = false) {
+  if (query && !nodeMatchesQuery(sectionNode, query)) {
     return null; // hide section if no match
   }
 
-  const completedCount = lessons.filter(l => state.progress.completed && state.progress.completed[l.relPath]).length;
-  const isAllDone = lessons.length > 0 && completedCount === lessons.length;
+  const { total: totalLessons, completed: completedLessons } = getSubtreeLessonCounts(sectionNode);
+  const isAllDone = totalLessons > 0 && completedLessons === totalLessons;
+  const hasActive = containsActiveLesson(sectionNode);
+  const isExpanded = defaultExpanded || hasActive || (query !== '');
 
   const sectionDiv = document.createElement('div');
-  sectionDiv.className = `curriculum-section ${defaultExpanded || query ? 'expanded' : ''}`;
+  sectionDiv.className = `curriculum-section depth-${depth} ${isExpanded ? 'expanded' : ''}`;
 
   const headerDiv = document.createElement('div');
-  headerDiv.className = 'section-header';
+  headerDiv.className = `section-header ${depth > 0 ? 'subfolder-header' : ''}`;
   headerDiv.innerHTML = `
     <div class="section-header-left">
       <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-      <span class="section-name" title="${title}">${title}</span>
+      ${depth > 0 ? '<svg class="folder-svg-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>' : ''}
+      <span class="section-name" title="${sectionNode.title}">${sectionNode.title}</span>
     </div>
-    <span class="section-progress-badge ${isAllDone ? 'all-done' : ''}">${completedCount}/${lessons.length}</span>
+    <span class="section-progress-badge ${isAllDone ? 'all-done' : ''}">${completedLessons}/${totalLessons}</span>
   `;
 
-  headerDiv.onclick = () => {
+  headerDiv.onclick = (e) => {
+    e.stopPropagation();
     sectionDiv.classList.toggle('expanded');
   };
 
   const lessonsListDiv = document.createElement('div');
   lessonsListDiv.className = 'section-lessons-list';
 
-  filteredLessons.forEach(lesson => {
-    const isCompleted = !!(state.progress.completed && state.progress.completed[lesson.relPath]);
-    const isActive = state.activeLesson && state.activeLesson.relPath === lesson.relPath;
+  // 1. Direct lessons in this section
+  if (sectionNode.lessons) {
+    const filteredLessons = sectionNode.lessons.filter(l => !query || l.title.toLowerCase().includes(query) || l.fileName.toLowerCase().includes(query));
+    filteredLessons.forEach(lesson => {
+      const isCompleted = !!(state.progress.completed && state.progress.completed[lesson.relPath]);
+      const isActive = state.activeLesson && state.activeLesson.relPath === lesson.relPath;
 
-    const itemEl = document.createElement('div');
-    itemEl.className = `lesson-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`;
-    itemEl.innerHTML = `
-      <div class="lesson-item-left">
-        <div class="lesson-checkbox ${isCompleted ? 'completed' : ''}" title="Mark completed">
-          ${isCompleted ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+      const itemEl = document.createElement('div');
+      itemEl.className = `lesson-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`;
+      itemEl.innerHTML = `
+        <div class="lesson-item-left">
+          <div class="lesson-checkbox ${isCompleted ? 'completed' : ''}" title="Mark completed">
+            ${isCompleted ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
+          </div>
+          <span class="lesson-icon">${getMediaIcon(lesson.type)}</span>
+          <span class="lesson-title-text" title="${lesson.title}">${lesson.title}</span>
         </div>
-        <span class="lesson-icon">${getMediaIcon(lesson.type)}</span>
-        <span class="lesson-title-text" title="${lesson.title}">${lesson.title}</span>
-      </div>
-      <span class="lesson-meta">${lesson.sizeFormatted || ''}</span>
-    `;
+        <span class="lesson-meta">${lesson.sizeFormatted || ''}</span>
+      `;
 
-    // Click checkbox
-    const checkEl = itemEl.querySelector('.lesson-checkbox');
-    checkEl.onclick = (e) => {
-      e.stopPropagation();
-      toggleLessonComplete(lesson.relPath);
-    };
+      // Click checkbox
+      const checkEl = itemEl.querySelector('.lesson-checkbox');
+      checkEl.onclick = (e) => {
+        e.stopPropagation();
+        toggleLessonComplete(lesson.relPath);
+      };
 
-    // Click item to load
-    itemEl.onclick = () => {
-      loadLesson(lesson);
-    };
+      // Click item to load
+      itemEl.onclick = () => {
+        loadLesson(lesson);
+      };
 
-    lessonsListDiv.appendChild(itemEl);
-  });
+      lessonsListDiv.appendChild(itemEl);
+    });
+  }
+
+  // 2. Direct supplementary files if any
+  if (sectionNode.supplementaryFiles && sectionNode.supplementaryFiles.length > 0) {
+    const filteredFiles = sectionNode.supplementaryFiles.filter(f => !query || f.title.toLowerCase().includes(query) || f.fileName.toLowerCase().includes(query));
+    filteredFiles.forEach(file => {
+      const suppEl = document.createElement('div');
+      suppEl.className = 'lesson-item supplementary-item';
+      suppEl.innerHTML = `
+        <div class="lesson-item-left">
+          <span class="supplementary-bullet">📦</span>
+          <span class="lesson-icon">${getMediaIcon(file.type)}</span>
+          <span class="lesson-title-text" title="${file.fileName}">${file.fileName}</span>
+        </div>
+        <span class="lesson-meta">${file.sizeFormatted || ''}</span>
+      `;
+      suppEl.onclick = () => {
+        loadLesson(file);
+      };
+      lessonsListDiv.appendChild(suppEl);
+    });
+  }
+
+  // 3. Child subfolders nested directly inside!
+  if (sectionNode.sections && sectionNode.sections.length > 0) {
+    sectionNode.sections.forEach(subSection => {
+      const subHasActive = containsActiveLesson(subSection);
+      const subEl = createSectionElement(subSection, query, depth + 1, subHasActive || isExpanded);
+      if (subEl) {
+        lessonsListDiv.appendChild(subEl);
+      }
+    });
+  }
 
   sectionDiv.appendChild(headerDiv);
   sectionDiv.appendChild(lessonsListDiv);
@@ -375,12 +667,18 @@ async function loadLesson(lesson, seekTime = 0) {
     documentContainer.classList.add('hidden');
     videoContainer.classList.remove('hidden');
 
-    const streamUrl = `/api/stream?path=${encodeURIComponent(fullPath)}`;
+    const streamUrl = lesson.fileObject
+      ? URL.createObjectURL(lesson.fileObject)
+      : `/api/stream?path=${encodeURIComponent(fullPath)}`;
+
     videoPlayer.src = streamUrl;
     videoPlayer.playbackRate = state.preferences.playbackSpeed || 1;
 
     // Handle Subtitles
-    if (lesson.subtitle) {
+    if (lesson.subFileObject) {
+      subtitleTrack.src = URL.createObjectURL(lesson.subFileObject);
+      subtitleTrack.mode = 'showing';
+    } else if (lesson.subtitle) {
       const subPath = `${state.currentCourse.path}/${lesson.subtitle.relPath}`;
       subtitleTrack.src = `/api/subtitle?path=${encodeURIComponent(subPath)}`;
       subtitleTrack.mode = 'showing';
@@ -404,7 +702,9 @@ async function loadLesson(lesson, seekTime = 0) {
     docMarkdownContent.classList.add('hidden');
 
     docTitle.textContent = lesson.title;
-    const fileUrl = `/api/file?path=${encodeURIComponent(fullPath)}`;
+    const fileUrl = lesson.fileObject
+      ? URL.createObjectURL(lesson.fileObject)
+      : `/api/file?path=${encodeURIComponent(fullPath)}`;
     docPdfFrame.src = fileUrl;
     docOpenExternalBtn.href = fileUrl;
   } else if (lesson.type === 'note' || lesson.ext === '.md' || lesson.ext === '.txt') {
@@ -415,15 +715,20 @@ async function loadLesson(lesson, seekTime = 0) {
     docMarkdownContent.classList.remove('hidden');
 
     docTitle.textContent = lesson.title;
-    const fileUrl = `/api/file?path=${encodeURIComponent(fullPath)}`;
-    docOpenExternalBtn.href = fileUrl;
-
-    try {
-      const res = await fetch(fileUrl);
-      const text = await res.text();
-      docMarkdownContent.innerHTML = renderMarkdown(text);
-    } catch (e) {
-      docMarkdownContent.textContent = 'Error loading text document.';
+    if (lesson.fileObject) {
+      docOpenExternalBtn.href = '#';
+      lesson.fileObject.text().then(text => {
+        docMarkdownContent.innerHTML = renderMarkdown(text);
+      }).catch(() => {
+        docMarkdownContent.textContent = 'Error reading file content.';
+      });
+    } else {
+      const fileUrl = `/api/file?path=${encodeURIComponent(fullPath)}`;
+      docOpenExternalBtn.href = fileUrl;
+      fetch(fileUrl)
+        .then(res => res.text())
+        .then(text => { docMarkdownContent.innerHTML = renderMarkdown(text); })
+        .catch(() => { docMarkdownContent.textContent = 'Error loading text document.'; });
     }
   }
 
@@ -454,6 +759,12 @@ async function toggleLessonComplete(relPath) {
 
   if (state.activeLesson && state.activeLesson.relPath === relPath) {
     updateCompleteButtonUI(newStatus);
+  }
+
+  // If local files, persist to localStorage
+  if (state.currentCourse.isLocalFiles) {
+    localStorage.setItem(`coursair_prog_${state.currentCourse.id}`, JSON.stringify(state.progress));
+    return;
   }
 
   // Post to server
@@ -559,11 +870,22 @@ async function addNoteAtCurrentTime() {
   const time = Math.floor(videoPlayer.currentTime || 0);
 
   const noteData = {
+    id: 'note_' + Date.now(),
     lessonPath: state.activeLesson.relPath,
     lessonTitle: state.activeLesson.title,
     time,
-    text
+    text,
+    createdAt: new Date().toISOString()
   };
+
+  if (state.currentCourse.isLocalFiles) {
+    if (!state.progress.notes) state.progress.notes = [];
+    state.progress.notes.push(noteData);
+    localStorage.setItem(`coursair_prog_${state.currentCourse.id}`, JSON.stringify(state.progress));
+    newNoteInput.value = '';
+    renderNotesTab();
+    return;
+  }
 
   try {
     const res = await fetch(`/api/progress/${state.currentCourse.id}`, {
@@ -582,6 +904,16 @@ async function addNoteAtCurrentTime() {
 
 async function deleteNote(noteId) {
   if (!state.currentCourse) return;
+
+  if (state.currentCourse.isLocalFiles) {
+    if (state.progress.notes) {
+      state.progress.notes = state.progress.notes.filter(n => n.id !== noteId);
+      localStorage.setItem(`coursair_prog_${state.currentCourse.id}`, JSON.stringify(state.progress));
+      renderNotesTab();
+    }
+    return;
+  }
+
   try {
     const res = await fetch(`/api/progress/${state.currentCourse.id}`, {
       method: 'POST',
@@ -690,10 +1022,15 @@ function updateResourcesTab() {
 
   resourcesList.innerHTML = '';
   foundResources.forEach(res => {
-    const fullPath = `${state.currentCourse.path}/${res.relPath}`;
     const card = document.createElement('a');
     card.className = 'resource-card';
-    card.href = `/api/file?path=${encodeURIComponent(fullPath)}&download=true`;
+    if (res.fileObject) {
+      card.href = URL.createObjectURL(res.fileObject);
+      card.target = '_blank';
+    } else {
+      const fullPath = `${state.currentCourse.path}/${res.relPath}`;
+      card.href = `/api/file?path=${encodeURIComponent(fullPath)}&download=true`;
+    }
     card.download = res.fileName;
     card.innerHTML = `
       <div class="resource-info">
@@ -964,6 +1301,24 @@ function setupEventListeners() {
   courseSelectorBtn.onclick = openCourseModal;
   addCourseNavBtn.onclick = openCourseModal;
   closeCourseModalBtn.onclick = closeCourseModal;
+
+  // Native Browser Folder Picker
+  if (browseFolderDialogBtn) {
+    browseFolderDialogBtn.onclick = openBrowserFolderPicker;
+  }
+  if (browserFolderInput) {
+    browserFolderInput.onchange = (e) => {
+      const files = Array.from(e.target.files);
+      if (!files || files.length === 0) return;
+      const rootName = files[0].webkitRelativePath.split('/')[0] || 'Selected Course';
+      const fileItems = files.map(file => {
+        const parts = file.webkitRelativePath.split('/');
+        parts.shift();
+        return { file, relPath: parts.join('/') };
+      });
+      buildCourseFromFileItems(rootName, fileItems);
+    };
+  }
 
   shortcutsBtn.onclick = () => shortcutsModal.classList.remove('hidden');
   closeShortcutsModalBtn.onclick = () => shortcutsModal.classList.add('hidden');

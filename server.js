@@ -128,7 +128,7 @@ function scanCourseDirectory(rootPath, currentDir = '', depth = 0) {
       const subTree = scanCourseDirectory(rootPath, relPath, depth + 1);
       if (subTree && (subTree.lessons.length > 0 || subTree.sections.length > 0 || subTree.supplementaryFiles.length > 0)) {
         sections.push({
-          title: cleanTitle(entry.name),
+          title: cleanTitle(entry.name, false),
           folderName: entry.name,
           relPath,
           ...subTree
@@ -143,7 +143,7 @@ function scanCourseDirectory(rootPath, currentDir = '', depth = 0) {
       } catch (e) {}
 
       const fileItem = {
-        title: cleanTitle(entry.name),
+        title: cleanTitle(entry.name, true),
         fileName: entry.name,
         relPath,
         ext,
@@ -180,13 +180,18 @@ function scanCourseDirectory(rootPath, currentDir = '', depth = 0) {
   return { sections, lessons, supplementaryFiles };
 }
 
-// Strip leading numbers/formatting for clean display (e.g., "01 - Introduction.mp4" -> "Introduction")
-function cleanTitle(name) {
-  const withoutExt = path.parse(name).name;
-  return withoutExt
+// Strip leading numbers/formatting for clean display (handles folders with dots)
+function cleanTitle(name, isFile = false) {
+  let baseName = name;
+  if (isFile) {
+    const lastDot = name.lastIndexOf('.');
+    if (lastDot > 0) baseName = name.substring(0, lastDot);
+  }
+  const cleaned = baseName
     .replace(/^[\d\s._\-]+/, '') // Strip leading digits and separators
     .replace(/_/g, ' ')
-    .trim() || withoutExt;
+    .trim();
+  return cleaned || baseName;
 }
 
 // Convert SRT to VTT subtitle format on the fly

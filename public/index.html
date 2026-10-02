@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body class="dark-theme">
   <!-- Top Navigation Bar -->
@@ -289,13 +289,28 @@
         <button id="close-course-modal-btn" class="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label for="course-path-input">Enter Course Folder Path on Your PC</label>
-          <div class="path-input-group">
-            <input type="text" id="course-path-input" placeholder="e.g. D:\Courses\Full-Stack-Bootcamp or C:\Users\Downloads\Course" autocomplete="off">
-            <button id="submit-add-course-btn" class="btn btn-primary">Discover</button>
+        <!-- Standard browser folder picker input -->
+        <input type="file" id="browser-folder-input" webkitdirectory directory multiple style="display: none;">
+
+        <!-- Primary Action: Native Folder Picker Popup -->
+        <div class="folder-picker-hero">
+          <button id="browse-folder-dialog-btn" class="btn btn-primary btn-picker" type="button">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span id="browse-btn-text">Select Course Folder from PC...</span>
+          </button>
+          <div class="divider-text">
+            <span>or enter folder path manually</span>
           </div>
-          <p class="field-help">Coursair will automatically discover all nested modules, videos, slides, subtitles, and code files.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="path-input-group">
+            <input type="text" id="course-path-input" placeholder="e.g. D:\Courses\Python-Masterclass or C:\Users\Downloads\Course" autocomplete="off">
+            <button id="submit-add-course-btn" class="btn btn-secondary">Load Path</button>
+          </div>
+          <p class="field-help">Coursair automatically discovers all nested modules, videos, slides, subtitles, and code files.</p>
         </div>
 
         <!-- Quick System Folders -->
@@ -341,6 +356,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
