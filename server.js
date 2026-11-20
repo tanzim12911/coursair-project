@@ -2,6 +2,8 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import os from 'os';
 import mime from 'mime-types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -265,8 +267,120 @@ app.get('/api/courses', (req, res) => {
 });
 
 // 2. Add a new course folder
+// ---------- Native folder dialog ----------
+// Browsers never reveal a picked folder's real path, so a course chosen in the browser
+// can't be saved. The server runs on the user's own machine, so it opens the OS dialog
+// instead and gets the real path.
+
+function isLoopbackRequest(req) {
+  const addr = req.socket.remoteAddress || '';
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+const WINDOWS_PICKER_SCRIPT = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+$dlg.Description = 'Choose a course folder for Coursair'
+$dlg.ShowNewFolderButton = $false
+$start = $env:COURSAIR_PICK_START
+if ($start -and (Test-Path -LiteralPath $start)) { $dlg.SelectedPath = $start }
+# An invisible always-on-top owner keeps the dialog in front of the browser
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.SelectedPath }
+$owner.Dispose()
+`;
+
+function runPicker(cmd, args, env) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { windowsHide: true, timeout: 10 * 60 * 1000, env: { ...process.env, ...env } }, (err, stdout) => {
+      if (err && err.code === 'ENOENT') return reject(Object.assign(new Error(`${cmd} not found`), { unsupported: true }));
+      // A non-zero exit from these dialogs means the user cancelled
+      if (err) return resolve(null);
+      const picked = String(stdout).trim();
+      resolve(picked || null);
+    });
+  });
+}
+
+async function openNativeFolderDialog(startDir) {
+  if (process.platform === 'win32') {
+    const encoded = Buffer.from(WINDOWS_PICKER_SCRIPT, 'utf16le').toString('base64');
+    return runPicker('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand', encoded], { COURSAIR_PICK_START: startDir });
+  }
+  if (process.platform === 'darwin') {
+    const p = await runPicker('osascript', ['-e', 'POSIX path of (choose folder with prompt "Choose a course folder for Coursair")'], {});
+    return p ? p.replace(/\/$/, '') : null;
+  }
+  try {
+    return await runPicker('zenity', ['--file-selection', '--directory', '--title=Choose a course folder for Coursair', `--filename=${startDir}/`], {});
+  } catch (e) {
+    if (!e.unsupported) throw e;
+    return runPicker('kdialog', ['--getexistingdirectory', startDir, '--title', 'Choose a course folder for Coursair'], {});
+  }
+}
+
+let folderDialogOpen = false;
+app.post('/api/pick-folder', async (req, res) => {
+  if (!isLoopbackRequest(req)) {
+    return res.status(403).json({ error: 'The folder dialog can only be opened on the computer running Coursair.', unsupported: true });
+  }
+  if (folderDialogOpen) {
+    return res.status(409).json({ error: 'A folder dialog is already open. Check your taskbar.' });
+  }
+  folderDialogOpen = true;
+  try {
+    const videos = path.join(os.homedir(), 'Videos');
+    const picked = await openNativeFolderDialog(fs.existsSync(videos) ? videos : os.homedir());
+    res.json(picked ? { path: picked } : { cancelled: true });
+  } catch (err) {
+    res.status(501).json({ error: `Could not open a folder dialog: ${err.message}`, unsupported: true });
+  } finally {
+    folderDialogOpen = false;
+  }
+});
+
+// ---------- Progress merging (carry over progress from browser-only sessions) ----------
+function sanitizeProgress(p) {
+  if (!p || typeof p !== 'object') return null;
+  const out = { completed: {}, notes: [], positions: {}, lastWatched: null };
+  for (const [k, v] of Object.entries(p.completed || {})) if (v === true) out.completed[k] = true;
+  for (const n of Array.isArray(p.notes) ? p.notes : []) {
+    if (n && typeof n.id === 'string' && typeof n.text === 'string' && typeof n.lessonPath === 'string') {
+      out.notes.push({ id: n.id, lessonPath: n.lessonPath, lessonTitle: String(n.lessonTitle || ''), time: Number(n.time) || 0, text: n.text, createdAt: n.createdAt || new Date().toISOString() });
+    }
+  }
+  for (const [k, v] of Object.entries(p.positions || {})) {
+    if (v && typeof v === 'object') out.positions[k] = { time: Number(v.time) || 0, duration: Number(v.duration) || 0, updatedAt: v.updatedAt || new Date(0).toISOString() };
+  }
+  const lw = p.lastWatched;
+  if (lw && typeof lw.path === 'string') out.lastWatched = { path: lw.path, title: String(lw.title || ''), time: Number(lw.time) || 0, duration: Number(lw.duration) || 0, updatedAt: lw.updatedAt || new Date(0).toISOString() };
+  return out;
+}
+
+const newer = (a, b) => Date.parse((a && a.updatedAt) || 0) > Date.parse((b && b.updatedAt) || 0);
+
+function mergeProgress(target, src) {
+  if (!src) return target;
+  target.completed = { ...(src.completed || {}), ...(target.completed || {}) };
+  const noteIds = new Set((target.notes || []).map(n => n.id));
+  target.notes = [...(target.notes || []), ...(src.notes || []).filter(n => !noteIds.has(n.id))];
+  target.positions = target.positions || {};
+  for (const [k, v] of Object.entries(src.positions || {})) {
+    if (!target.positions[k] || newer(v, target.positions[k])) target.positions[k] = v;
+  }
+  if (src.lastWatched && (!target.lastWatched || newer(src.lastWatched, target.lastWatched))) {
+    target.lastWatched = src.lastWatched;
+  }
+  return target;
+}
+
+// Id the browser-only picker used for a folder name (must match app.js)
+const browserOnlyCourseId = (folderName) => 'local_' + folderName.replace(/[^a-zA-Z0-9_]/g, '_');
+
 app.post('/api/courses/add', (req, res) => {
-  let { folderPath, name } = req.body;
+  let { folderPath, name, importProgress } = req.body;
   if (!folderPath || typeof folderPath !== 'string') {
     return res.status(400).json({ error: 'Folder path is required' });
   }
@@ -309,8 +423,23 @@ app.post('/api/courses/add', (req, res) => {
     db.courses.push(courseEntry);
   }
 
+  // Carry over progress from earlier browser-only sessions of this folder
+  const localId = browserOnlyCourseId(path.basename(folderPath));
+  if (!db.progress[courseId]) db.progress[courseId] = { completed: {}, lastWatched: null, notes: [] };
+  let importedProgress = false;
+  if (localId !== courseId && db.progress[localId]) {
+    mergeProgress(db.progress[courseId], sanitizeProgress(db.progress[localId]));
+    delete db.progress[localId];
+    importedProgress = true;
+  }
+  const fromBrowser = sanitizeProgress(importProgress);
+  if (fromBrowser) {
+    mergeProgress(db.progress[courseId], fromBrowser);
+    importedProgress = true;
+  }
+
   saveDB(db);
-  res.json({ success: true, course: courseEntry });
+  res.json({ success: true, course: courseEntry, importedProgress, browserOnlyId: localId });
 });
 
 // 3. Remove a course from the library

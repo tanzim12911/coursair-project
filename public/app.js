@@ -93,6 +93,8 @@ const coursePathInput = document.getElementById('course-path-input');
 const submitAddCourseBtn = document.getElementById('submit-add-course-btn');
 const browseFolderDialogBtn = document.getElementById('browse-folder-dialog-btn');
 const browseBtnText = document.getElementById('browse-btn-text');
+const pickFolderMessage = document.getElementById('pick-folder-message');
+const browserOnlyBtn = document.getElementById('browser-only-btn');
 const browserFolderInput = document.getElementById('browser-folder-input');
 const quickFolderChips = document.getElementById('quick-folder-chips');
 const modalCoursesList = document.getElementById('modal-courses-list');
@@ -584,7 +586,43 @@ async function refreshCoursesList() {
   }
 }
 
+// Same id the browser-only picker uses for a folder name (must match server.js)
+function browserOnlyCourseId(folderName) {
+  return 'local_' + folderName.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
+function showPickFolderMessage(text) {
+  pickFolderMessage.textContent = text || '';
+  pickFolderMessage.classList.toggle('hidden', !text);
+}
+
+// Ask the local server to open the OS folder dialog, then add the folder to the library.
+// (Browsers never reveal a picked folder's real path, so they can't save it.)
+async function chooseCourseFolder() {
+  showPickFolderMessage('');
+  const originalText = browseBtnText.textContent;
+  browseFolderDialogBtn.disabled = true;
+  browseBtnText.textContent = 'Choose the folder in the window that opened…';
+  try {
+    const res = await fetch('/api/pick-folder', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (data.path) await addCourse(data.path);
+      return;
+    }
+    showPickFolderMessage(data.unsupported
+      ? `${data.error || 'The folder dialog is not available here.'} Type the folder path below instead.`
+      : (data.error || 'Could not open the folder dialog.'));
+  } catch (err) {
+    showPickFolderMessage('Could not reach Coursair to open the folder dialog. Is the server running?');
+  } finally {
+    browseFolderDialogBtn.disabled = false;
+    browseBtnText.textContent = originalText;
+  }
+}
+
 // Browser Directory Picker (File System Access API & webkitdirectory)
+// Session only: the browser hides the folder's real path, so this course can't be saved.
 async function openBrowserFolderPicker() {
   if (window.showDirectoryPicker) {
     try {
@@ -1602,18 +1640,33 @@ async function addCourse(folderPath, name = '') {
   if (!folderPath) return;
   submitAddCourseBtn.disabled = true;
   submitAddCourseBtn.textContent = 'Scanning…';
+  showPickFolderMessage('');
+
+  // Progress saved while this folder was opened "for this session only"
+  const folderName = folderPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+  const localKey = `coursair_prog_${browserOnlyCourseId(folderName)}`;
+  let importProgress = null;
+  try {
+    const raw = localStorage.getItem(localKey);
+    if (raw) importProgress = JSON.parse(raw);
+  } catch (e) {}
 
   try {
     const res = await fetch('/api/courses/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folderPath, name })
+      body: JSON.stringify({ folderPath, name, importProgress })
     });
     const data = await res.json();
 
     if (!res.ok) {
-      alert(data.error || 'Failed to add course folder');
+      showPickFolderMessage(data.error || 'Failed to add course folder');
       return;
+    }
+
+    // The server now holds that progress; drop the browser-only copy
+    if (importProgress) {
+      try { localStorage.removeItem(localKey); } catch (e) {}
     }
 
     coursePathInput.value = '';
@@ -1621,7 +1674,7 @@ async function addCourse(folderPath, name = '') {
     await refreshCoursesList();
     openCourse(data.course.id);
   } catch (err) {
-    alert('Network error adding course folder: ' + err.message);
+    showPickFolderMessage('Network error adding course folder: ' + err.message);
   } finally {
     submitAddCourseBtn.disabled = false;
     submitAddCourseBtn.textContent = 'Add';
@@ -1657,6 +1710,7 @@ function renderModalCourseList() {
 }
 
 function openCourseModal() {
+  showPickFolderMessage('');
   courseModal.classList.remove('hidden');
   renderModalCourseList();
 }
@@ -1857,9 +1911,12 @@ function setupEventListeners() {
   addCourseNavBtn.onclick = openCourseModal;
   closeCourseModalBtn.onclick = closeCourseModal;
 
-  // Native Browser Folder Picker
+  // Session-only browser picker (fallback when using Coursair from another device)
+  browserOnlyBtn.onclick = openBrowserFolderPicker;
+
+  // Native OS folder picker (saved to the library)
   if (browseFolderDialogBtn) {
-    browseFolderDialogBtn.onclick = openBrowserFolderPicker;
+    browseFolderDialogBtn.onclick = chooseCourseFolder;
   }
   if (browserFolderInput) {
     browserFolderInput.onchange = (e) => {

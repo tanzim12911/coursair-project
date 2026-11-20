@@ -16,7 +16,7 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body class="view-dashboard">
   <!-- Top Bar -->
@@ -348,6 +348,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
           <span id="browse-btn-text">Choose a course folder…</span>
         </button>
+        <p id="pick-folder-message" class="field-error hidden" role="alert"></p>
 
         <div class="divider-text"><span>or enter a folder path</span></div>
 
@@ -356,6 +357,11 @@
           <button id="submit-add-course-btn" class="btn btn-outline">Add</button>
         </div>
         <p class="field-help">Coursair finds nested sections, videos, PDFs, subtitles and code files automatically.</p>
+        <p class="field-help">
+          Using Coursair from another device?
+          <button id="browser-only-btn" type="button" class="text-btn">Open a folder for this session only</button>
+          (it won't be saved to your library).
+        </p>
 
         <div class="quick-folders-section">
           <span class="quick-title">Shortcuts</span>
@@ -392,6 +398,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
