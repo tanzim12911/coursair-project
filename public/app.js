@@ -8,7 +8,10 @@ const state = {
   preferences: { playbackSpeed: 1, volume: 1 },
   courses: [],
   allLessonsFlat: [],
-  autoPlayTimer: null
+  autoPlayTimer: null,
+  mediaReady: false,   // true once the current video's metadata loaded and any resume seek happened
+  playerUrls: [],      // object URLs to revoke on the next lesson load
+  subtitlesOn: true
 };
 
 // DOM Elements
@@ -20,7 +23,7 @@ const progressCountText = document.getElementById('progress-count-text');
 
 // Player DOM
 const videoPlayer = document.getElementById('main-video-player');
-const subtitleTrack = document.getElementById('main-subtitle-track');
+let subtitleTrack = document.getElementById('main-subtitle-track');
 const videoContainer = document.getElementById('video-container');
 const documentContainer = document.getElementById('document-container');
 const docTitle = document.getElementById('doc-title');
@@ -104,6 +107,9 @@ const stageNextBtn = document.getElementById('stage-next-btn');
 const volumeBtn = document.getElementById('volume-btn');
 const volumeOnIcon = document.getElementById('volume-on-icon');
 const volumeOffIcon = document.getElementById('volume-off-icon');
+const resumeToast = document.getElementById('resume-toast');
+const resumeToastText = document.getElementById('resume-toast-text');
+const resumeStartOverBtn = document.getElementById('resume-start-over-btn');
 
 // ---------- Theme (light / dark) ----------
 const THEME_KEY = 'coursair-theme';
@@ -338,13 +344,31 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// Same rule as the server: exact name, or name + language tag ("Intro.en.srt"), same folder only
+const SUB_LANG_SUFFIX = /^[._\s-]+[a-z]{2,3}([-_][a-z]{2,4})?$/i;
+function findSubtitleFor(videoBase, subtitlesInFolder) {
+  if (!subtitlesInFolder) return null;
+  if (subtitlesInFolder[videoBase]) return subtitlesInFolder[videoBase];
+  for (const [subBase, file] of Object.entries(subtitlesInFolder)) {
+    if (subBase.startsWith(videoBase) && SUB_LANG_SUFFIX.test(subBase.slice(videoBase.length))) return file;
+  }
+  return null;
+}
+
 function buildCourseFromFileItems(courseName, fileItems) {
-  const subtitles = {};
+  flushPosition();
+  state.activeLesson = null;
+
+  // Subtitles grouped by folder so "01 - Intro.srt" in one section never attaches to another section's video
+  const subtitlesByFolder = {};
   fileItems.forEach(item => {
     const ext = '.' + item.file.name.split('.').pop().toLowerCase();
     if (ext === '.srt' || ext === '.vtt') {
+      const parts = item.relPath.replace(/\\/g, '/').split('/');
+      parts.pop();
+      const folder = parts.join('/');
       const base = item.file.name.substring(0, item.file.name.lastIndexOf('.')).toLowerCase();
-      subtitles[base] = item.file;
+      (subtitlesByFolder[folder] = subtitlesByFolder[folder] || {})[base] = item.file;
     }
   });
 
@@ -391,7 +415,7 @@ function buildCourseFromFileItems(courseName, fileItems) {
     if (type === 'subtitle') return;
 
     const baseName = fileName.substring(0, fileName.lastIndexOf('.')).toLowerCase();
-    const subFile = subtitles[baseName] || null;
+    const subFile = findSubtitleFor(baseName, subtitlesByFolder[folderPath]);
 
     const targetFolder = getOrCreateFolder(folderPath);
 
@@ -450,13 +474,21 @@ function buildCourseFromFileItems(courseName, fileItems) {
   updateStatsTab();
   renderNotesTab();
 
-  if (state.allLessonsFlat.length > 0) {
-    loadLesson(state.allLessonsFlat[0], 0);
-  }
+  resumeCourse();
+}
+
+// Open the last lesson the user had open in this course (its video resumes by itself)
+function resumeCourse() {
+  const lw = state.progress.lastWatched;
+  const found = lw && lw.path ? state.allLessonsFlat.find(l => l.relPath === lw.path) : null;
+  const target = found || state.allLessonsFlat[0];
+  if (target) loadLesson(target);
 }
 
 // Select Active Course
 async function selectCourse(courseId) {
+  flushPosition();
+  state.activeLesson = null;
   try {
     const res = await fetch(`/api/courses/${courseId}/curriculum`);
     if (!res.ok) throw new Error('Failed to load curriculum');
@@ -479,19 +511,7 @@ async function selectCourse(courseId) {
     updateStatsTab();
     renderNotesTab();
 
-    // Resume last watched or open first lesson
-    if (state.progress.lastWatched && state.progress.lastWatched.path) {
-      const found = state.allLessonsFlat.find(l => l.relPath === state.progress.lastWatched.path);
-      if (found) {
-        loadLesson(found, state.progress.lastWatched.time || 0);
-        return;
-      }
-    }
-
-    // Default to first video or lesson
-    if (state.allLessonsFlat.length > 0) {
-      loadLesson(state.allLessonsFlat[0], 0);
-    }
+    resumeCourse();
   } catch (err) {
     console.error('Failed to load course details:', err);
   }
@@ -644,6 +664,17 @@ function createSectionElement(sectionNode, ctx, depth = 0, defaultExpanded = fal
     const isActive = state.activeLesson && state.activeLesson.relPath === lesson.relPath;
     const num = ctx.numbers[lesson.relPath];
 
+    // Partly watched: show a thin bar and time left
+    let watchMeta = '';
+    let watchBar = '';
+    const resumeAt = isCompleted ? 0 : getResumeTime(lesson);
+    const saved = resumeAt ? getSavedPosition(lesson) : null;
+    if (saved && saved.duration) {
+      const pct = Math.min(100, Math.round((saved.time / saved.duration) * 100));
+      const minsLeft = Math.max(1, Math.round((saved.duration - saved.time) / 60));
+      watchMeta = ` · ${minsLeft} min left`;
+      watchBar = `<span class="lesson-watch-bar"><span style="width:${pct}%"></span></span>`;
+    }
 
     const itemEl = document.createElement('div');
     itemEl.className = `lesson-item${isActive ? ' active' : ''}${isCompleted ? ' completed' : ''}`;
@@ -653,7 +684,8 @@ function createSectionElement(sectionNode, ctx, depth = 0, defaultExpanded = fal
       <span class="lesson-checkbox${isCompleted ? ' completed' : ''}" role="checkbox" aria-checked="${isCompleted}" title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">${isCompleted ? ICONS.check : ''}</span>
       <span class="lesson-body">
         <span class="lesson-title-text" title="${escapeHtml(lesson.fileName || lesson.title)}">${num ? num + '. ' : ''}${escapeHtml(lesson.title)}</span>
-        <span class="lesson-meta">${getMediaIcon(lesson.type)}<span>${escapeHtml(lesson.sizeFormatted || '')}</span></span>
+        <span class="lesson-meta">${getMediaIcon(lesson.type)}<span>${escapeHtml(lesson.sizeFormatted || '')}${watchMeta}</span></span>
+        ${watchBar}
       </span>
     `;
 
@@ -705,98 +737,175 @@ function getFileUrl(file, download = false) {
   return `/api/file?path=${encodeURIComponent(fullPath)}${download ? '&download=true' : ''}`;
 }
 
-// Load Lesson into Stage
-async function loadLesson(lesson, seekTime = 0) {
+// ---------- Resume positions ----------
+function isMediaLesson(lesson) {
+  return !!lesson && (lesson.type === 'video' || lesson.type === 'audio');
+}
+
+function getSavedPosition(lesson) {
+  if (!lesson) return null;
+  const positions = state.progress.positions || {};
+  if (positions[lesson.relPath]) return positions[lesson.relPath];
+  // Older data only stored the course's last-watched lesson
+  const lw = state.progress.lastWatched;
+  return lw && lw.path === lesson.relPath ? lw : null;
+}
+
+// Where to start a video: its saved spot, unless it is barely started or already finished
+function getResumeTime(lesson) {
+  if (!isMediaLesson(lesson)) return 0;
+  const p = getSavedPosition(lesson);
+  if (!p || !p.time || p.time < 5) return 0;
+  // Treat the last 5% (at most 10s, e.g. end credits) as finished: start those from the beginning
+  if (p.duration && p.duration - p.time <= Math.min(10, p.duration * 0.05)) return 0;
+  return p.time;
+}
+
+// Save the current video's spot right now (before switching lesson/course or closing the tab)
+function flushPosition() {
+  if (state.mediaReady && isMediaLesson(state.activeLesson)) saveLastWatched(true);
+}
+
+// Object URLs created for the player (browser-picked courses); revoked on the next load
+function playerObjectUrl(blob) {
+  const url = URL.createObjectURL(blob);
+  state.playerUrls.push(url);
+  return url;
+}
+function revokePlayerUrls() {
+  state.playerUrls.forEach(u => URL.revokeObjectURL(u));
+  state.playerUrls = [];
+}
+
+// ---------- Subtitles ----------
+// Use a brand-new <track> element per lesson (or none): changing src on an existing track
+// keeps the previous video's cues on screen.
+function setSubtitleSource(src) {
+  if (subtitleTrack && subtitleTrack.isConnected) subtitleTrack.remove();
+  const fresh = document.createElement('track');
+  fresh.id = 'main-subtitle-track';
+  fresh.kind = 'subtitles';
+  fresh.srclang = 'en';
+  fresh.label = 'Subtitles';
+  subtitleTrack = fresh;
+  if (src) {
+    fresh.src = src;
+    fresh.default = state.subtitlesOn;
+    videoPlayer.appendChild(fresh);
+    fresh.track.mode = state.subtitlesOn ? 'showing' : 'hidden';
+  }
+
+  subtitlesToggleBtn.disabled = !src;
+  subtitlesToggleBtn.title = src ? 'Subtitles' : 'No subtitles for this lesson';
+  subtitlesToggleBtn.classList.toggle('is-off', !!src && !state.subtitlesOn);
+}
+
+// ---------- Resume toast ----------
+let resumeToastTimer = null;
+function showResumeToast(time) {
+  resumeToastText.textContent = `Resumed at ${formatTime(time)}`;
+  resumeToast.classList.remove('hidden');
+  clearTimeout(resumeToastTimer);
+  resumeToastTimer = setTimeout(hideResumeToast, 6000);
+}
+function hideResumeToast() {
+  clearTimeout(resumeToastTimer);
+  resumeToast.classList.add('hidden');
+}
+
+// Load Lesson into Stage. seekTime: null = resume where the user left off.
+async function loadLesson(lesson, seekTime = null) {
+  flushPosition();
+  state.mediaReady = false;
+  revokePlayerUrls();
+  hideResumeToast();
+
   state.activeLesson = lesson;
   cancelAutoplay();
 
-  // Update Breadcrumbs
   breadcrumbSection.textContent = lesson.sectionName || 'Section';
   breadcrumbLesson.textContent = lesson.title;
 
-  // Update Completion button state
   const isCompleted = !!(state.progress.completed && state.progress.completed[lesson.relPath]);
   updateCompleteButtonUI(isCompleted);
 
-  // Update active highlighted class in tree
   renderCurriculum(lessonSearchInput.value);
 
   const fullPath = `${state.currentCourse.path}/${lesson.relPath}`;
+  const isResume = seekTime === null;
+  const startTime = isResume ? getResumeTime(lesson) : seekTime;
 
-  if (lesson.type === 'video' || lesson.type === 'audio') {
+  if (isMediaLesson(lesson)) {
     documentContainer.classList.add('hidden');
     videoContainer.classList.remove('hidden');
 
-    const streamUrl = lesson.fileObject
-      ? URL.createObjectURL(lesson.fileObject)
-      : `/api/stream?path=${encodeURIComponent(fullPath)}`;
-
-    videoPlayer.src = streamUrl;
-    videoPlayer.playbackRate = state.preferences.playbackSpeed || 1;
-
-    // Handle Subtitles
     if (lesson.subFileObject) {
-      subtitleTrack.src = URL.createObjectURL(lesson.subFileObject);
-      subtitleTrack.mode = 'showing';
+      setSubtitleSource(playerObjectUrl(lesson.subFileObject));
     } else if (lesson.subtitle) {
       const subPath = `${state.currentCourse.path}/${lesson.subtitle.relPath}`;
-      subtitleTrack.src = `/api/subtitle?path=${encodeURIComponent(subPath)}`;
-      subtitleTrack.mode = 'showing';
+      setSubtitleSource(`/api/subtitle?path=${encodeURIComponent(subPath)}`);
     } else {
-      subtitleTrack.src = '';
-      subtitleTrack.mode = 'disabled';
+      setSubtitleSource(null);
     }
+
+    videoPlayer.src = lesson.fileObject
+      ? playerObjectUrl(lesson.fileObject)
+      : `/api/stream?path=${encodeURIComponent(fullPath)}`;
+    videoPlayer.playbackRate = state.preferences.playbackSpeed || 1;
 
     videoPlayer.onloadedmetadata = () => {
       durationTimeText.textContent = formatTime(videoPlayer.duration);
-      if (seekTime > 0) {
-        videoPlayer.currentTime = seekTime;
+      videoPlayer.playbackRate = state.preferences.playbackSpeed || 1;
+      if (startTime > 0 && startTime < videoPlayer.duration) {
+        videoPlayer.currentTime = startTime;
+        if (isResume) showResumeToast(startTime);
       }
+      state.mediaReady = true;
+      saveLastWatched(true);
       videoPlayer.play().catch(() => {});
     };
-  } else if (lesson.type === 'document' && lesson.ext === '.pdf') {
+  } else {
     videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+    setSubtitleSource(null);
     videoContainer.classList.add('hidden');
     documentContainer.classList.remove('hidden');
-    docPdfFrame.classList.remove('hidden');
-    docMarkdownContent.classList.add('hidden');
-
     docTitle.textContent = lesson.title;
-    const fileUrl = lesson.fileObject
-      ? URL.createObjectURL(lesson.fileObject)
-      : `/api/file?path=${encodeURIComponent(fullPath)}`;
-    docPdfFrame.src = fileUrl;
-    docOpenExternalBtn.href = fileUrl;
-  } else if (lesson.type === 'note' || lesson.ext === '.md' || lesson.ext === '.txt') {
-    videoPlayer.pause();
-    videoContainer.classList.add('hidden');
-    documentContainer.classList.remove('hidden');
-    docPdfFrame.classList.add('hidden');
-    docMarkdownContent.classList.remove('hidden');
 
-    docTitle.textContent = lesson.title;
-    if (lesson.fileObject) {
-      docOpenExternalBtn.href = '#';
-      lesson.fileObject.text().then(text => {
-        docMarkdownContent.innerHTML = renderMarkdown(text);
-      }).catch(() => {
-        docMarkdownContent.textContent = 'Error reading file content.';
-      });
-    } else {
-      const fileUrl = `/api/file?path=${encodeURIComponent(fullPath)}`;
+    if (lesson.type === 'document' && lesson.ext === '.pdf') {
+      docPdfFrame.classList.remove('hidden');
+      docMarkdownContent.classList.add('hidden');
+      const fileUrl = lesson.fileObject
+        ? playerObjectUrl(lesson.fileObject)
+        : `/api/file?path=${encodeURIComponent(fullPath)}`;
+      docPdfFrame.src = fileUrl;
       docOpenExternalBtn.href = fileUrl;
-      fetch(fileUrl)
-        .then(res => res.text())
-        .then(text => { docMarkdownContent.innerHTML = renderMarkdown(text); })
-        .catch(() => { docMarkdownContent.textContent = 'Error loading text document.'; });
+    } else {
+      docPdfFrame.classList.add('hidden');
+      docPdfFrame.removeAttribute('src');
+      docMarkdownContent.classList.remove('hidden');
+      if (lesson.fileObject) {
+        docOpenExternalBtn.href = '#';
+        lesson.fileObject.text().then(text => {
+          docMarkdownContent.innerHTML = renderMarkdown(text);
+        }).catch(() => {
+          docMarkdownContent.textContent = 'Error reading file content.';
+        });
+      } else {
+        const fileUrl = `/api/file?path=${encodeURIComponent(fullPath)}`;
+        docOpenExternalBtn.href = fileUrl;
+        fetch(fileUrl)
+          .then(res => res.text())
+          .then(text => { docMarkdownContent.innerHTML = renderMarkdown(text); })
+          .catch(() => { docMarkdownContent.textContent = 'Error loading text document.'; });
+      }
     }
+    // Documents have no position; just remember this was the last lesson opened
+    saveLastWatched(true);
   }
 
-  // Update Resources Tab for current folder
   updateResourcesTab();
-
-  // Save last watched lesson
-  saveLastWatched(0);
 }
 
 // Toggle Lesson Completion
@@ -1105,28 +1214,43 @@ function updateResourcesTab() {
   });
 }
 
-// Save Watch Timestamp
+// Save where the user is: the course's last-opened lesson and, for videos, the per-video spot.
 let lastSaveTick = 0;
-function saveLastWatched(forceTime = null) {
-  if (!state.currentCourse || !state.activeLesson) return;
+function saveLastWatched(force = false) {
+  const lesson = state.activeLesson;
+  if (!state.currentCourse || !lesson) return;
+  const media = isMediaLesson(lesson);
+  if (media && !state.mediaReady) return; // don't overwrite a saved spot while the video loads
+
   const now = Date.now();
-  if (forceTime === null && now - lastSaveTick < 4000) return; // throttle every 4s
+  if (!force && now - lastSaveTick < 4000) return;
   lastSaveTick = now;
 
-  const time = forceTime !== null ? forceTime : Math.floor(videoPlayer.currentTime || 0);
-  const duration = Math.floor(videoPlayer.duration || 0);
+  const time = media ? Math.floor(videoPlayer.currentTime || 0) : 0;
+  const duration = media ? Math.floor(videoPlayer.duration || 0) : 0;
+  const updatedAt = new Date().toISOString();
+
+  state.progress.lastWatched = { path: lesson.relPath, title: lesson.title, time, duration, updatedAt };
+  if (media) {
+    if (!state.progress.positions) state.progress.positions = {};
+    state.progress.positions[lesson.relPath] = { time, duration, updatedAt };
+  }
+
+  if (state.currentCourse.isLocalFiles) {
+    try {
+      localStorage.setItem(`coursair_prog_${state.currentCourse.id}`, JSON.stringify(state.progress));
+    } catch (e) {}
+    return;
+  }
+
+  const body = { lastWatched: { path: lesson.relPath, title: lesson.title, time, duration } };
+  if (media) body.position = { relPath: lesson.relPath, time, duration };
 
   fetch(`/api/progress/${state.currentCourse.id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      lastWatched: {
-        path: state.activeLesson.relPath,
-        title: state.activeLesson.title,
-        time,
-        duration
-      }
-    })
+    body: JSON.stringify(body),
+    keepalive: true // lets the save finish when the tab is closing
   }).catch(() => {});
 }
 
@@ -1242,7 +1366,7 @@ function setupEventListeners() {
     playIcon.classList.remove('hidden');
     pauseIcon.classList.add('hidden');
     videoContainer.classList.add('is-paused');
-    saveLastWatched();
+    saveLastWatched(true);
   };
 
   // Mute
@@ -1290,6 +1414,7 @@ function setupEventListeners() {
 
   // Video End -> Autoplay Next
   videoPlayer.onended = () => {
+    saveLastWatched(true);
     triggerAutoPlayNext();
   };
   cancelAutoplayBtn.onclick = cancelAutoplay;
@@ -1328,14 +1453,25 @@ function setupEventListeners() {
 
   // Subtitles Toggle
   subtitlesToggleBtn.onclick = () => {
-    if (subtitleTrack.mode === 'showing') {
-      subtitleTrack.mode = 'hidden';
-      subtitlesToggleBtn.classList.add('is-off');
-    } else {
-      subtitleTrack.mode = 'showing';
-      subtitlesToggleBtn.classList.remove('is-off');
+    state.subtitlesOn = !state.subtitlesOn;
+    if (subtitleTrack.track && subtitleTrack.getAttribute('src')) {
+      subtitleTrack.track.mode = state.subtitlesOn ? 'showing' : 'hidden';
     }
+    subtitlesToggleBtn.classList.toggle('is-off', !state.subtitlesOn);
   };
+
+  // Resume toast
+  resumeStartOverBtn.onclick = () => {
+    videoPlayer.currentTime = 0;
+    hideResumeToast();
+    saveLastWatched(true);
+  };
+
+  // Save the current spot when the tab is hidden or closed
+  window.addEventListener('pagehide', flushPosition);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPosition();
+  });
 
   // Lesson Nav Buttons
   prevLessonBtn.onclick = () => navigateLesson(-1);

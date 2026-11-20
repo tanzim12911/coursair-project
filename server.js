@@ -154,15 +154,9 @@ function scanCourseDirectory(rootPath, currentDir = '', depth = 0) {
       };
 
       if (type === 'video' || type === 'audio') {
-        // Find matching subtitle if any
+        // Find the matching subtitle in the same folder (exact name, or name + language tag)
         const baseName = path.basename(entry.name, ext).toLowerCase();
-        let matchedSub = null;
-        for (const [subBase, subInfo] of Object.entries(subtitles)) {
-          if (subBase === baseName || subBase.startsWith(baseName) || baseName.startsWith(subBase)) {
-            matchedSub = subInfo;
-            break;
-          }
-        }
+        const matchedSub = findSubtitleFor(baseName, subtitles);
         if (matchedSub) {
           fileItem.subtitle = matchedSub;
         }
@@ -178,6 +172,19 @@ function scanCourseDirectory(rootPath, currentDir = '', depth = 0) {
   }
 
   return { sections, lessons, supplementaryFiles };
+}
+
+// Match "Lesson 1.srt", "Lesson 1.en.srt", "Lesson 1_en.srt", "Lesson 1 - en-US.srt" to "Lesson 1.mp4",
+// but never "Lesson 10.srt". Exact matches win over language-tagged ones.
+const LANG_SUFFIX = /^[._\s-]+[a-z]{2,3}([-_][a-z]{2,4})?$/i;
+function findSubtitleFor(videoBase, subtitles) {
+  if (subtitles[videoBase]) return subtitles[videoBase];
+  for (const [subBase, subInfo] of Object.entries(subtitles)) {
+    if (subBase.startsWith(videoBase) && LANG_SUFFIX.test(subBase.slice(videoBase.length))) {
+      return subInfo;
+    }
+  }
+  return null;
 }
 
 // Strip leading numbers/formatting for clean display (handles folders with dots)
@@ -444,7 +451,7 @@ app.get('/api/progress/:courseId', (req, res) => {
 
 app.post('/api/progress/:courseId', (req, res) => {
   const { courseId } = req.params;
-  const { completed, lastWatched, note, deleteNoteId, preferences } = req.body;
+  const { completed, lastWatched, position, note, deleteNoteId, preferences } = req.body;
   const db = loadDB();
 
   if (!db.progress[courseId]) {
@@ -470,6 +477,16 @@ app.post('/api/progress/:courseId', (req, res) => {
     courseProg.lastWatched = {
       ...courseProg.lastWatched,
       ...lastWatched,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  // Per-video resume position
+  if (position && typeof position.relPath === 'string') {
+    if (!courseProg.positions) courseProg.positions = {};
+    courseProg.positions[position.relPath] = {
+      time: Math.max(0, Math.floor(Number(position.time) || 0)),
+      duration: Math.max(0, Math.floor(Number(position.duration) || 0)),
       updatedAt: new Date().toISOString()
     };
   }

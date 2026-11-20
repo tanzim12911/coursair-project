@@ -16,7 +16,7 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <!-- Top Bar -->
@@ -85,6 +85,12 @@
           <button id="stage-next-btn" class="stage-nav stage-nav-next" title="Next lesson" aria-label="Next lesson">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </button>
+
+          <!-- Resumed-from toast -->
+          <div id="resume-toast" class="resume-toast hidden" role="status">
+            <span id="resume-toast-text">Resumed</span>
+            <button id="resume-start-over-btn" class="text-btn">Start over</button>
+          </div>
 
           <!-- Autoplay Next -->
           <div id="autoplay-next-overlay" class="autoplay-overlay hidden">
@@ -332,6 +338,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

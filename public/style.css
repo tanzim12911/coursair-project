@@ -386,6 +386,25 @@ body.sidebar-collapsed .media-stage-wrapper { max-height: calc(100vh - var(--top
 }
 .ctrl-btn:hover { background: rgba(255, 255, 255, .15); }
 .ctrl-btn.is-off { opacity: .5; }
+.ctrl-btn:disabled { opacity: .3; cursor: default; background: transparent; }
+
+/* "Resumed at 4:12 · Start over" */
+.resume-toast {
+  position: absolute;
+  left: 16px;
+  bottom: 76px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  background: rgba(28, 29, 31, .92);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+.resume-toast .text-btn { color: #c3c7fc; }
 
 .time-display { margin-left: 8px; font-size: 13px; font-variant-numeric: tabular-nums; color: #e5e7eb; }
 .time-sep { margin: 0 4px; opacity: .6; }
@@ -800,6 +819,12 @@ body.sidebar-collapsed .open-sidebar-btn { display: inline-flex; }
 
 a.lesson-item { color: inherit; text-decoration: none; }
 .supplementary-item .lesson-title-text { color: var(--text-2); }
+
+/* Partly watched lessons */
+.lesson-watch-bar { display: block; height: 3px; margin-top: 6px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.lesson-watch-bar > span { display: block; height: 100%; background: var(--accent); }
+.lesson-item.active .lesson-watch-bar { background: var(--border); }
+.supplementary-spacer { display: grid; place-items: center; width: 18px; margin-top: 2px; flex-shrink: 0; color: var(--text-3); }
 
 .curriculum-list .empty-state { margin: 16px; }
 
