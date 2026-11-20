@@ -3,156 +3,123 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Coursair — Offline Course Dashboard & Player</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=6">
+  <title>Coursair</title>
+  <meta name="color-scheme" content="light dark">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('coursair-theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
-<body class="dark-theme">
-  <!-- Top Navigation Bar -->
-  <header class="navbar">
-    <div class="nav-brand">
-      <div class="brand-logo">
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+<body>
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
           <polyline points="2 17 12 22 22 17"></polyline>
           <polyline points="2 12 12 17 22 12"></polyline>
         </svg>
-      </div>
-      <div class="brand-text">
         <span class="brand-name">Coursair</span>
-        <span class="brand-badge">Offline LMS</span>
       </div>
-    </div>
-
-    <!-- Active Course Pill & Quick Switcher -->
-    <div class="nav-center">
-      <button id="course-selector-btn" class="course-picker-trigger" title="Switch or Add Course">
-        <span class="folder-icon">📁</span>
-        <span id="current-course-title" class="current-course-label">Loading Course...</span>
-        <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button id="course-selector-btn" class="course-switch" title="Switch or add course">
+        <span id="current-course-title" class="course-switch-title">Loading course…</span>
+        <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
     </div>
 
-    <div class="nav-actions">
-      <button id="shortcuts-btn" class="icon-btn" title="Keyboard Shortcuts (Press ?)">
-        <kbd>?</kbd>
+    <div class="topbar-actions">
+      <div class="progress-summary" title="Your progress">
+        <div class="progress-ring-wrap">
+          <svg class="progress-ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="progress-ring-bg" stroke-width="3" fill="transparent" r="15" cx="18" cy="18"/>
+            <circle id="progress-circle" class="progress-ring-fg" stroke-width="3" fill="transparent" r="15" cx="18" cy="18"/>
+          </svg>
+          <svg class="progress-trophy" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>
+        </div>
+        <div class="progress-text">
+          <span class="progress-label">Your progress <strong id="progress-percent-text">0%</strong></span>
+          <span id="progress-count-text" class="progress-count">0 of 0 complete</span>
+        </div>
+      </div>
+
+      <button id="theme-toggle-btn" class="topbar-icon-btn" title="Toggle light / dark mode" aria-label="Toggle light or dark mode">
+        <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
-      <button id="add-course-nav-btn" class="btn btn-primary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        <span>Add Folder</span>
+
+      <button id="shortcuts-btn" class="topbar-icon-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+      </button>
+
+      <button id="add-course-nav-btn" class="btn btn-topbar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        <span>Add course</span>
       </button>
     </div>
   </header>
 
-  <!-- Main App Shell -->
   <div class="app-layout">
-    <!-- Sidebar: Curriculum & Progress -->
-    <aside class="curriculum-sidebar">
-      <div class="sidebar-header">
-        <div class="progress-hero">
-          <div class="progress-ring-container">
-            <svg class="progress-ring" width="56" height="56">
-              <circle class="progress-ring-circle-bg" stroke-width="5" fill="transparent" r="23" cx="28" cy="28"/>
-              <circle id="progress-circle" class="progress-ring-circle" stroke-width="5" fill="transparent" r="23" cx="28" cy="28"/>
-            </svg>
-            <span id="progress-percent-text" class="progress-percent">0%</span>
-          </div>
-          <div class="progress-details">
-            <div class="progress-title">Overall Progress</div>
-            <div id="progress-count-text" class="progress-sub">0 of 0 completed</div>
-          </div>
-        </div>
-
-        <!-- Search / Filter Lessons -->
-        <div class="search-box">
-          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="text" id="lesson-search-input" placeholder="Search lessons, files..." autocomplete="off">
-          <button id="search-clear-btn" class="search-clear-btn hidden">&times;</button>
-        </div>
-      </div>
-
-      <!-- Curriculum Tree View -->
-      <div class="curriculum-tree-container">
-        <div class="curriculum-tree-header">
-          <span class="tree-heading">CURRICULUM</span>
-          <div class="tree-actions">
-            <button id="expand-all-btn" class="text-btn">Expand All</button>
-            <span class="dot-sep">•</span>
-            <button id="collapse-all-btn" class="text-btn">Collapse</button>
-          </div>
-        </div>
-        <div id="curriculum-list" class="curriculum-list">
-          <!-- Populated dynamically via app.js -->
-        </div>
-      </div>
-    </aside>
-
-    <!-- Center Content: Media Player & Document Viewer -->
+    <!-- Main column: player + tabs -->
     <main class="content-viewport">
-      <!-- Lesson Context Bar -->
-      <div class="lesson-bar">
-        <div class="lesson-breadcrumbs">
-          <span id="breadcrumb-section" class="breadcrumb-item">Section</span>
-          <span class="breadcrumb-sep">/</span>
-          <span id="breadcrumb-lesson" class="breadcrumb-item active">Select a lesson</span>
-        </div>
-        <div class="lesson-controls">
-          <button id="prev-lesson-btn" class="btn btn-ghost btn-sm" title="Previous Lesson (Shift+P)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            <span>Prev</span>
-          </button>
-          <button id="toggle-complete-btn" class="btn btn-secondary btn-sm" title="Toggle completion (C)">
-            <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span id="complete-btn-text">Mark Complete</span>
-          </button>
-          <button id="next-lesson-btn" class="btn btn-ghost btn-sm" title="Next Lesson (Shift+N)">
-            <span>Next</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Media Stage Container -->
       <div class="media-stage-wrapper">
-        <!-- Video Player View -->
-        <div id="video-container" class="media-container video-active">
+        <!-- Video Player -->
+        <div id="video-container" class="media-container video-view is-paused">
           <video id="main-video-player" playsinline preload="metadata">
             <track id="main-subtitle-track" kind="subtitles" srclang="en" label="English" default>
             Your browser does not support HTML5 video.
           </video>
 
-          <!-- Auto Play Next Countdown Overlay -->
+          <button id="stage-prev-btn" class="stage-nav stage-nav-prev" title="Previous lesson" aria-label="Previous lesson">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <button id="stage-next-btn" class="stage-nav stage-nav-next" title="Next lesson" aria-label="Next lesson">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+
+          <!-- Autoplay Next -->
           <div id="autoplay-next-overlay" class="autoplay-overlay hidden">
             <div class="autoplay-card">
-              <div class="autoplay-title">Up Next in 5s</div>
-              <div id="autoplay-lesson-title" class="autoplay-lesson-name">Next Lesson Title</div>
+              <div class="autoplay-eyebrow">Up next</div>
+              <div id="autoplay-lesson-title" class="autoplay-lesson-name">Next lesson</div>
               <div class="autoplay-actions">
-                <button id="cancel-autoplay-btn" class="btn btn-ghost btn-sm">Cancel</button>
-                <button id="play-next-now-btn" class="btn btn-primary btn-sm">Play Now</button>
+                <button id="cancel-autoplay-btn" class="btn btn-ghost-light btn-sm">Cancel</button>
+                <button id="play-next-now-btn" class="btn btn-primary btn-sm">Play now</button>
               </div>
             </div>
           </div>
 
-          <!-- Video Custom Controls Bar -->
+          <!-- Controls -->
           <div class="custom-video-controls">
             <div class="scrub-container">
-              <input type="range" id="video-seek-bar" class="seek-bar" min="0" max="100" value="0" step="0.1">
-              <div id="seek-progress-fill" class="seek-progress-fill"></div>
+              <div class="seek-track"><div id="seek-progress-fill" class="seek-progress-fill"></div></div>
+              <input type="range" id="video-seek-bar" class="seek-bar" min="0" max="100" value="0" step="0.1" aria-label="Seek">
             </div>
 
             <div class="controls-row">
               <div class="controls-left">
-                <button id="play-pause-btn" class="ctrl-btn" title="Play/Pause (Space)">
-                  <svg id="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                  <svg id="pause-icon" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                <button id="play-pause-btn" class="ctrl-btn" title="Play / Pause (Space)" aria-label="Play or pause">
+                  <svg id="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+                  <svg id="pause-icon" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
                 </button>
-                <button id="rewind-btn" class="ctrl-btn" title="Rewind 5s (←)">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+                <button id="rewind-btn" class="ctrl-btn" title="Rewind 5s (←)" aria-label="Rewind 5 seconds">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
                 </button>
-                <button id="forward-btn" class="ctrl-btn" title="Forward 5s (→)">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+                <button id="forward-btn" class="ctrl-btn" title="Forward 5s (→)" aria-label="Forward 5 seconds">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+                </button>
+                <button id="volume-btn" class="ctrl-btn" title="Mute (M)" aria-label="Mute or unmute">
+                  <svg id="volume-on-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+                  <svg id="volume-off-icon" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
                 </button>
                 <div class="time-display">
                   <span id="current-time-text">0:00</span>
@@ -162,171 +129,177 @@
               </div>
 
               <div class="controls-right">
-                <!-- Speed Pill Selector -->
-                <div class="speed-selector">
+                <div class="speed-selector" role="group" aria-label="Playback speed">
                   <button class="speed-btn active" data-speed="1">1x</button>
                   <button class="speed-btn" data-speed="1.25">1.25x</button>
                   <button class="speed-btn" data-speed="1.5">1.5x</button>
                   <button class="speed-btn" data-speed="2">2x</button>
                 </div>
-
-                <!-- Subtitles Toggle -->
-                <button id="subtitles-toggle-btn" class="ctrl-btn" title="Subtitles (C)">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="15" x2="10" y2="15"/><line x1="14" y1="15" x2="18" y2="15"/></svg>
+                <button id="subtitles-toggle-btn" class="ctrl-btn" title="Subtitles" aria-label="Toggle subtitles">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="15" x2="10" y2="15"/><line x1="14" y1="15" x2="18" y2="15"/></svg>
                 </button>
-
-                <!-- Theater Mode Toggle -->
-                <button id="theater-btn" class="ctrl-btn" title="Theater Mode (T)">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="17" x2="22" y2="17"/></svg>
+                <button id="theater-btn" class="ctrl-btn" title="Expanded view (T)" aria-label="Toggle expanded view">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
                 </button>
-
-                <!-- Fullscreen Toggle -->
-                <button id="fullscreen-btn" class="ctrl-btn" title="Fullscreen (F)">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                <button id="fullscreen-btn" class="ctrl-btn" title="Fullscreen (F)" aria-label="Toggle fullscreen">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Document / Markdown Viewer View -->
+        <!-- Document / Markdown Viewer -->
         <div id="document-container" class="media-container document-view hidden">
           <div class="doc-header">
-            <span id="doc-title" class="doc-title-text">Document Title</span>
-            <a id="doc-open-external-btn" href="#" target="_blank" class="btn btn-ghost btn-sm">
-              <span>Open in New Tab</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span id="doc-title" class="doc-title-text">Document</span>
+            <a id="doc-open-external-btn" href="#" target="_blank" rel="noopener" class="btn btn-outline btn-sm">
+              <span>Open in new tab</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>
           </div>
-          <iframe id="doc-pdf-frame" class="doc-frame hidden"></iframe>
+          <iframe id="doc-pdf-frame" class="doc-frame hidden" title="Document viewer"></iframe>
           <div id="doc-markdown-content" class="doc-markdown-wrapper hidden"></div>
         </div>
+
+        <button id="open-sidebar-btn" class="open-sidebar-btn" title="Show course content">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          <span>Course content</span>
+        </button>
       </div>
 
-      <!-- Lower Panels: Tabs for Notes, Bookmarks & Accompanying Resources -->
+      <!-- Tabs under the player -->
       <div class="course-bottom-panel">
-        <div class="panel-tabs">
-          <button class="panel-tab-btn active" data-tab="notes">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            <span>Notes & Bookmarks</span>
-            <span id="notes-badge-count" class="tab-badge">0</span>
-          </button>
-          <button class="panel-tab-btn" data-tab="resources">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            <span>Resources & Files</span>
-            <span id="resources-badge-count" class="tab-badge">0</span>
-          </button>
-          <button class="panel-tab-btn" data-tab="overview">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <span>Course Stats</span>
-          </button>
-        </div>
+        <nav class="panel-tabs" role="tablist">
+          <button class="panel-tab-btn active" data-tab="overview" role="tab">Overview</button>
+          <button class="panel-tab-btn" data-tab="notes" role="tab">Notes <span id="notes-badge-count" class="tab-badge">0</span></button>
+          <button class="panel-tab-btn" data-tab="resources" role="tab">Resources <span id="resources-badge-count" class="tab-badge">0</span></button>
+        </nav>
 
         <div class="panel-content-area">
-          <!-- Notes Tab -->
-          <div id="tab-notes" class="tab-panel active">
-            <div class="add-note-card">
-              <div class="note-time-chip">
-                <span>Timestamp:</span>
-                <strong id="note-current-time-label">0:00</strong>
+          <!-- Overview -->
+          <section id="tab-overview" class="tab-panel">
+            <div class="lesson-head">
+              <div class="lesson-head-text">
+                <div id="breadcrumb-section" class="lesson-eyebrow">Section</div>
+                <h1 id="breadcrumb-lesson" class="lesson-heading">Select a lesson</h1>
               </div>
+              <div class="lesson-controls">
+                <button id="prev-lesson-btn" class="btn btn-outline btn-sm" title="Previous lesson (Shift+P)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  <span>Previous</span>
+                </button>
+                <button id="toggle-complete-btn" class="btn btn-primary btn-sm" title="Toggle completion (C)">
+                  <svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span id="complete-btn-text">Mark as complete</span>
+                </button>
+                <button id="next-lesson-btn" class="btn btn-outline btn-sm" title="Next lesson (Shift+N)">
+                  <span>Next</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="overview-block">
+              <h2 class="overview-title">By the numbers</h2>
+              <dl class="stats-grid">
+                <div class="stat"><dt>Lessons</dt><dd id="stat-total-lessons">0</dd></div>
+                <div class="stat"><dt>Videos</dt><dd id="stat-total-videos">0</dd></div>
+                <div class="stat"><dt>Documents</dt><dd id="stat-total-docs">0</dd></div>
+                <div class="stat"><dt>Completed</dt><dd id="stat-completed-lessons" class="text-success">0</dd></div>
+              </dl>
+            </div>
+
+            <div class="overview-block">
+              <h2 class="overview-title">Course location</h2>
+              <code id="stat-course-path" class="path-code">-</code>
+            </div>
+          </section>
+
+          <!-- Notes -->
+          <section id="tab-notes" class="tab-panel hidden">
+            <div class="add-note-card">
+              <label for="new-note-input" class="add-note-label">Create a new note at <strong id="note-current-time-label" class="time-chip">0:00</strong></label>
               <div class="note-input-row">
-                <input type="text" id="new-note-input" placeholder="Type a note or bookmark at this exact timestamp..." autocomplete="off">
-                <button id="add-note-btn" class="btn btn-primary btn-sm">Add Note</button>
+                <input type="text" id="new-note-input" placeholder="Write a note for this moment…" autocomplete="off">
+                <button id="add-note-btn" class="btn btn-primary">Save note</button>
               </div>
             </div>
             <div class="notes-actions-bar">
-              <span class="notes-hint">Click on any timestamp to jump right to that point in the lesson</span>
-              <button id="export-notes-btn" class="text-btn">Export Notes (.md)</button>
+              <span class="notes-hint">Click a timestamp to jump to that moment.</span>
+              <button id="export-notes-btn" class="text-btn">Export as Markdown</button>
             </div>
             <div id="notes-list" class="notes-list">
-              <div class="empty-state">No notes added yet for this course.</div>
+              <div class="empty-state">No notes yet for this course.</div>
             </div>
-          </div>
+          </section>
 
-          <!-- Resources Tab -->
-          <div id="tab-resources" class="tab-panel hidden">
+          <!-- Resources -->
+          <section id="tab-resources" class="tab-panel hidden">
             <div id="resources-list" class="resources-grid">
-              <div class="empty-state">No supplementary files found in this section.</div>
+              <div class="empty-state">No resources in this section.</div>
             </div>
-          </div>
-
-          <!-- Overview Tab -->
-          <div id="tab-overview" class="tab-panel hidden">
-            <div class="stats-cards-grid">
-              <div class="stat-card">
-                <div class="stat-label">Total Lessons</div>
-                <div id="stat-total-lessons" class="stat-value">0</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Videos</div>
-                <div id="stat-total-videos" class="stat-value">0</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Documents & Notes</div>
-                <div id="stat-total-docs" class="stat-value">0</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Completed</div>
-                <div id="stat-completed-lessons" class="stat-value text-emerald">0</div>
-              </div>
-            </div>
-            <div class="course-path-info">
-              <span class="path-label">Local Course Directory:</span>
-              <code id="stat-course-path" class="path-code">-</code>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
     </main>
+
+    <!-- Course content sidebar -->
+    <aside class="curriculum-sidebar" id="curriculum-sidebar">
+      <div class="sidebar-header">
+        <h2 class="sidebar-title">Course content</h2>
+        <button id="close-sidebar-btn" class="icon-btn" title="Hide course content" aria-label="Hide course content">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-tools">
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="lesson-search-input" placeholder="Search lessons" autocomplete="off" aria-label="Search lessons">
+          <button id="search-clear-btn" class="search-clear-btn hidden" aria-label="Clear search">&times;</button>
+        </div>
+        <div class="tree-actions">
+          <button id="expand-all-btn" class="text-btn">Expand all</button>
+          <button id="collapse-all-btn" class="text-btn">Collapse all</button>
+        </div>
+      </div>
+
+      <div id="curriculum-list" class="curriculum-list"></div>
+    </aside>
   </div>
 
   <!-- Modal: Add or Select Course -->
   <div id="course-modal" class="modal-backdrop hidden">
-    <div class="modal-card">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="course-modal-title">
       <div class="modal-header">
-        <h3 class="modal-title">Select or Add Course Folder</h3>
-        <button id="close-course-modal-btn" class="modal-close-btn">&times;</button>
+        <h3 id="course-modal-title" class="modal-title">Your courses</h3>
+        <button id="close-course-modal-btn" class="icon-btn" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="modal-body">
-        <!-- Standard browser folder picker input -->
-        <input type="file" id="browser-folder-input" webkitdirectory directory multiple style="display: none;">
+        <div id="modal-courses-list" class="modal-course-list"></div>
 
-        <!-- Primary Action: Native Folder Picker Popup -->
-        <div class="folder-picker-hero">
-          <button id="browse-folder-dialog-btn" class="btn btn-primary btn-picker" type="button">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span id="browse-btn-text">Select Course Folder from PC...</span>
-          </button>
-          <div class="divider-text">
-            <span>or enter folder path manually</span>
-          </div>
+        <h4 class="section-subtitle">Add a course</h4>
+        <input type="file" id="browser-folder-input" webkitdirectory directory multiple hidden>
+
+        <button id="browse-folder-dialog-btn" class="btn btn-primary btn-block" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span id="browse-btn-text">Choose a course folder…</span>
+        </button>
+
+        <div class="divider-text"><span>or enter a folder path</span></div>
+
+        <div class="path-input-group">
+          <input type="text" id="course-path-input" placeholder="e.g. D:\Courses\Python-Masterclass" autocomplete="off" aria-label="Course folder path">
+          <button id="submit-add-course-btn" class="btn btn-outline">Add</button>
         </div>
+        <p class="field-help">Coursair finds nested sections, videos, PDFs, subtitles and code files automatically.</p>
 
-        <div class="form-group">
-          <div class="path-input-group">
-            <input type="text" id="course-path-input" placeholder="e.g. D:\Courses\Python-Masterclass or C:\Users\Downloads\Course" autocomplete="off">
-            <button id="submit-add-course-btn" class="btn btn-secondary">Load Path</button>
-          </div>
-          <p class="field-help">Coursair automatically discovers all nested modules, videos, slides, subtitles, and code files.</p>
-        </div>
-
-        <!-- Quick System Folders -->
         <div class="quick-folders-section">
-          <span class="quick-title">Quick Shortcuts:</span>
-          <div id="quick-folder-chips" class="quick-chips">
-            <!-- Populated dynamically -->
-          </div>
-        </div>
-
-        <!-- Existing Registered Courses -->
-        <div class="registered-courses-section">
-          <h4 class="section-subtitle">Your Course Libraries</h4>
-          <div id="modal-courses-list" class="modal-course-list">
-            <!-- Populated dynamically -->
-          </div>
+          <span class="quick-title">Shortcuts</span>
+          <div id="quick-folder-chips" class="quick-chips"></div>
         </div>
       </div>
     </div>
@@ -334,28 +307,31 @@
 
   <!-- Modal: Keyboard Shortcuts -->
   <div id="shortcuts-modal" class="modal-backdrop hidden">
-    <div class="modal-card modal-sm">
+    <div class="modal-card modal-sm" role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title">
       <div class="modal-header">
-        <h3 class="modal-title">Keyboard Shortcuts</h3>
-        <button id="close-shortcuts-modal-btn" class="modal-close-btn">&times;</button>
+        <h3 id="shortcuts-modal-title" class="modal-title">Keyboard shortcuts</h3>
+        <button id="close-shortcuts-modal-btn" class="icon-btn" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
       <div class="modal-body">
         <div class="shortcut-list">
-          <div class="shortcut-item"><kbd>Space</kbd> <span>Play / Pause</span></div>
-          <div class="shortcut-item"><kbd>←</kbd> / <kbd>→</kbd> <span>Seek backward / forward 5s</span></div>
-          <div class="shortcut-item"><kbd>Shift</kbd> + <kbd>→</kbd> <span>Seek forward 15s</span></div>
-          <div class="shortcut-item"><kbd>C</kbd> <span>Toggle completion checkmark</span></div>
-          <div class="shortcut-item"><kbd>Shift</kbd> + <kbd>N</kbd> <span>Next lesson</span></div>
-          <div class="shortcut-item"><kbd>Shift</kbd> + <kbd>P</kbd> <span>Previous lesson</span></div>
-          <div class="shortcut-item"><kbd>F</kbd> <span>Toggle fullscreen</span></div>
-          <div class="shortcut-item"><kbd>T</kbd> <span>Theater mode</span></div>
-          <div class="shortcut-item"><kbd>M</kbd> <span>Mute / Unmute</span></div>
-          <div class="shortcut-item"><kbd>1</kbd> - <kbd>4</kbd> <span>Set playback speed (1x, 1.25x, 1.5x, 2x)</span></div>
+          <div class="shortcut-item"><span>Play / Pause</span><span><kbd>Space</kbd></span></div>
+          <div class="shortcut-item"><span>Seek back / forward 5s</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
+          <div class="shortcut-item"><span>Seek back / forward 15s</span><span><kbd>Shift</kbd> + <kbd>←</kbd> <kbd>→</kbd></span></div>
+          <div class="shortcut-item"><span>Mark lesson complete</span><span><kbd>C</kbd></span></div>
+          <div class="shortcut-item"><span>Next lesson</span><span><kbd>Shift</kbd> + <kbd>N</kbd></span></div>
+          <div class="shortcut-item"><span>Previous lesson</span><span><kbd>Shift</kbd> + <kbd>P</kbd></span></div>
+          <div class="shortcut-item"><span>Fullscreen</span><span><kbd>F</kbd></span></div>
+          <div class="shortcut-item"><span>Expanded view</span><span><kbd>T</kbd></span></div>
+          <div class="shortcut-item"><span>Mute / Unmute</span><span><kbd>M</kbd></span></div>
+          <div class="shortcut-item"><span>Playback speed 1x – 2x</span><span><kbd>1</kbd> – <kbd>4</kbd></span></div>
+          <div class="shortcut-item"><span>Toggle light / dark mode</span><span><kbd>D</kbd></span></div>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

@@ -95,6 +95,62 @@ const closeShortcutsModalBtn = document.getElementById('close-shortcuts-modal-bt
 const expandAllBtn = document.getElementById('expand-all-btn');
 const collapseAllBtn = document.getElementById('collapse-all-btn');
 
+// Layout, theme & extra player controls
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
+const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const openSidebarBtn = document.getElementById('open-sidebar-btn');
+const stagePrevBtn = document.getElementById('stage-prev-btn');
+const stageNextBtn = document.getElementById('stage-next-btn');
+const volumeBtn = document.getElementById('volume-btn');
+const volumeOnIcon = document.getElementById('volume-on-icon');
+const volumeOffIcon = document.getElementById('volume-off-icon');
+
+// ---------- Theme (light / dark) ----------
+const THEME_KEY = 'coursair-theme';
+const systemDarkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+function getSavedTheme() {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'light' || t === 'dark' ? t : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+}
+
+// Follow the OS setting until the user picks a theme explicitly.
+if (systemDarkQuery && systemDarkQuery.addEventListener) {
+  systemDarkQuery.addEventListener('change', (e) => {
+    if (!getSavedTheme()) applyTheme(e.matches ? 'dark' : 'light');
+  });
+}
+
+// ---------- Icons ----------
+const ICONS = {
+  video: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>',
+  audio: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/></svg>',
+  document: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  note: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>',
+  code: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  archive: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+  file: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>',
+  folder: '<svg class="folder-svg-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  paperclip: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+  check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+  chevronDown: '<svg class="section-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>',
+  download: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+};
+
 // Helper: Format seconds to mm:ss or hh:mm:ss
 function formatTime(seconds) {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -109,15 +165,7 @@ function formatTime(seconds) {
 
 // Media Icon Picker
 function getMediaIcon(type) {
-  switch (type) {
-    case 'video': return '🎬';
-    case 'audio': return '🎧';
-    case 'document': return '📄';
-    case 'note': return '📝';
-    case 'code': return '💻';
-    case 'archive': return '📦';
-    default: return '📁';
-  }
+  return ICONS[type] || ICONS.file;
 }
 
 // Simple Markdown to HTML Parser
@@ -158,10 +206,8 @@ async function loadSystemFolders() {
 
     if (data.samplePath) {
       const sampleChip = document.createElement('button');
-      sampleChip.className = 'quick-chip-btn';
-      sampleChip.style.borderColor = 'var(--primary)';
-      sampleChip.style.color = '#a5b4fc';
-      sampleChip.innerHTML = '✨ Load Sample Course';
+      sampleChip.className = 'quick-chip-btn featured';
+      sampleChip.textContent = 'Load sample course';
       sampleChip.onclick = () => {
         coursePathInput.value = data.samplePath;
         addCourse(data.samplePath, 'Full-Stack Modern Architecture (Sample Course)');
@@ -459,11 +505,9 @@ function flattenLessons(node, sectionName = 'General') {
       state.allLessonsFlat.push({ ...l, sectionName: currentTitle });
     });
   }
-  if (node.supplementaryFiles) {
-    node.supplementaryFiles.forEach(f => {
-      state.allLessonsFlat.push({ ...f, sectionName: currentTitle });
-    });
-  }
+  // Supplementary files (code, archives) are not lessons: they are listed in the tree
+  // and Resources tab, but excluded here so progress can reach 100% and Next/Prev
+  // never lands on a file the player cannot show.
   if (node.sections) {
     node.sections.forEach(s => {
       flattenLessons(s, s.title || currentTitle);
@@ -508,141 +552,157 @@ function containsActiveLesson(node) {
   return false;
 }
 
+// Number lessons in tree order (1, 2, 3…) so numbering stays stable while filtering.
+function computeLessonNumbers() {
+  const numbers = {};
+  let n = 0;
+  (function walk(node) {
+    if (!node) return;
+    (node.lessons || []).forEach(l => { numbers[l.relPath] = ++n; });
+    (node.sections || []).forEach(walk);
+  })(state.curriculum);
+  return numbers;
+}
+
 // Render Curriculum Tree
 function renderCurriculum(filterQuery = '') {
   curriculumList.innerHTML = '';
   const query = filterQuery.toLowerCase().trim();
 
   if (!state.curriculum) return;
+  const ctx = { query, numbers: computeLessonNumbers() };
 
-  // Render top-level root lessons if any
-  if (state.curriculum.lessons && state.curriculum.lessons.length > 0) {
+  // Top-level files that are not inside any folder
+  const rootLessons = state.curriculum.lessons || [];
+  const rootFiles = state.curriculum.supplementaryFiles || [];
+  if (rootLessons.length > 0 || rootFiles.length > 0) {
     const rootNode = {
-      title: 'Course Overview & Notes',
+      title: 'Introduction',
       folderName: '',
       relPath: '',
-      lessons: state.curriculum.lessons,
-      supplementaryFiles: state.curriculum.supplementaryFiles || [],
+      lessons: rootLessons,
+      supplementaryFiles: rootFiles,
       sections: []
     };
-    const rootEl = createSectionElement(rootNode, query, 0, true);
+    const rootEl = createSectionElement(rootNode, ctx, 0, true, null);
     if (rootEl) curriculumList.appendChild(rootEl);
   }
 
-  // Render sections
-  if (state.curriculum.sections) {
-    state.curriculum.sections.forEach((section, idx) => {
-      const containsActive = containsActiveLesson(section);
-      const isExpanded = containsActive || (idx === 0 && !state.activeLesson);
-      const secEl = createSectionElement(section, query, 0, isExpanded);
-      if (secEl) curriculumList.appendChild(secEl);
-    });
+  (state.curriculum.sections || []).forEach((section, idx) => {
+    const isExpanded = containsActiveLesson(section) || (idx === 0 && !state.activeLesson);
+    const secEl = createSectionElement(section, ctx, 0, isExpanded, idx + 1);
+    if (secEl) curriculumList.appendChild(secEl);
+  });
+
+  if (!curriculumList.children.length) {
+    curriculumList.innerHTML = `<div class="empty-state">${query ? 'No lessons match your search.' : 'This course has no lessons yet.'}</div>`;
   }
 }
 
-function createSectionElement(sectionNode, query = '', depth = 0, defaultExpanded = false) {
-  if (query && !nodeMatchesQuery(sectionNode, query)) {
-    return null; // hide section if no match
-  }
+function matchesQuery(item, query) {
+  return !query
+    || (item.title && item.title.toLowerCase().includes(query))
+    || (item.fileName && item.fileName.toLowerCase().includes(query));
+}
 
-  const { total: totalLessons, completed: completedLessons } = getSubtreeLessonCounts(sectionNode);
-  const isAllDone = totalLessons > 0 && completedLessons === totalLessons;
-  const hasActive = containsActiveLesson(sectionNode);
-  const isExpanded = defaultExpanded || hasActive || (query !== '');
+function createSectionElement(sectionNode, ctx, depth = 0, defaultExpanded = false, sectionNumber = null) {
+  const { query } = ctx;
+  if (query && !nodeMatchesQuery(sectionNode, query)) return null;
+
+  const { total, completed } = getSubtreeLessonCounts(sectionNode);
+  const isAllDone = total > 0 && completed === total;
+  const isExpanded = defaultExpanded || containsActiveLesson(sectionNode) || query !== '';
 
   const sectionDiv = document.createElement('div');
-  sectionDiv.className = `curriculum-section depth-${depth} ${isExpanded ? 'expanded' : ''}`;
+  sectionDiv.className = `curriculum-section depth-${depth}${isExpanded ? ' expanded' : ''}`;
 
-  const headerDiv = document.createElement('div');
-  headerDiv.className = `section-header ${depth > 0 ? 'subfolder-header' : ''}`;
-  headerDiv.innerHTML = `
-    <div class="section-header-left">
-      <svg class="section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-      ${depth > 0 ? '<svg class="folder-svg-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>' : ''}
-      <span class="section-name" title="${sectionNode.title}">${sectionNode.title}</span>
-    </div>
-    <span class="section-progress-badge ${isAllDone ? 'all-done' : ''}">${completedLessons}/${totalLessons}</span>
+  const headerBtn = document.createElement('button');
+  headerBtn.type = 'button';
+  headerBtn.className = `section-header${depth > 0 ? ' subfolder-header' : ''}`;
+  headerBtn.setAttribute('aria-expanded', String(isExpanded));
+  const label = depth === 0 && sectionNumber ? `Section ${sectionNumber}: ${sectionNode.title}` : sectionNode.title;
+  const fileCount = (sectionNode.supplementaryFiles || []).length;
+  headerBtn.innerHTML = `
+    <span class="section-header-text">
+      <span class="section-name" title="${escapeHtml(sectionNode.title)}">${depth > 0 ? ICONS.folder : ''}${escapeHtml(label)}</span>
+      <span class="section-sub"><span class="${isAllDone ? 'all-done' : ''}">${completed} / ${total}</span>${fileCount ? ` | ${fileCount} resource${fileCount === 1 ? '' : 's'}` : ''}</span>
+    </span>
+    ${ICONS.chevronDown}
   `;
-
-  headerDiv.onclick = (e) => {
+  headerBtn.onclick = (e) => {
     e.stopPropagation();
-    sectionDiv.classList.toggle('expanded');
+    const open = sectionDiv.classList.toggle('expanded');
+    headerBtn.setAttribute('aria-expanded', String(open));
   };
 
-  const lessonsListDiv = document.createElement('div');
-  lessonsListDiv.className = 'section-lessons-list';
+  const listDiv = document.createElement('div');
+  listDiv.className = 'section-lessons-list';
 
-  // 1. Direct lessons in this section
-  if (sectionNode.lessons) {
-    const filteredLessons = sectionNode.lessons.filter(l => !query || l.title.toLowerCase().includes(query) || l.fileName.toLowerCase().includes(query));
-    filteredLessons.forEach(lesson => {
-      const isCompleted = !!(state.progress.completed && state.progress.completed[lesson.relPath]);
-      const isActive = state.activeLesson && state.activeLesson.relPath === lesson.relPath;
+  // 1. Lessons
+  (sectionNode.lessons || []).filter(l => matchesQuery(l, query)).forEach(lesson => {
+    const isCompleted = !!(state.progress.completed && state.progress.completed[lesson.relPath]);
+    const isActive = state.activeLesson && state.activeLesson.relPath === lesson.relPath;
+    const num = ctx.numbers[lesson.relPath];
 
-      const itemEl = document.createElement('div');
-      itemEl.className = `lesson-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`;
-      itemEl.innerHTML = `
-        <div class="lesson-item-left">
-          <div class="lesson-checkbox ${isCompleted ? 'completed' : ''}" title="Mark completed">
-            ${isCompleted ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
-          </div>
-          <span class="lesson-icon">${getMediaIcon(lesson.type)}</span>
-          <span class="lesson-title-text" title="${lesson.title}">${lesson.title}</span>
-        </div>
-        <span class="lesson-meta">${lesson.sizeFormatted || ''}</span>
-      `;
 
-      // Click checkbox
-      const checkEl = itemEl.querySelector('.lesson-checkbox');
-      checkEl.onclick = (e) => {
-        e.stopPropagation();
-        toggleLessonComplete(lesson.relPath);
-      };
+    const itemEl = document.createElement('div');
+    itemEl.className = `lesson-item${isActive ? ' active' : ''}${isCompleted ? ' completed' : ''}`;
+    itemEl.tabIndex = 0;
+    itemEl.setAttribute('role', 'button');
+    itemEl.innerHTML = `
+      <span class="lesson-checkbox${isCompleted ? ' completed' : ''}" role="checkbox" aria-checked="${isCompleted}" title="${isCompleted ? 'Mark as incomplete' : 'Mark as complete'}">${isCompleted ? ICONS.check : ''}</span>
+      <span class="lesson-body">
+        <span class="lesson-title-text" title="${escapeHtml(lesson.fileName || lesson.title)}">${num ? num + '. ' : ''}${escapeHtml(lesson.title)}</span>
+        <span class="lesson-meta">${getMediaIcon(lesson.type)}<span>${escapeHtml(lesson.sizeFormatted || '')}</span></span>
+      </span>
+    `;
 
-      // Click item to load
-      itemEl.onclick = () => {
-        loadLesson(lesson);
-      };
+    itemEl.querySelector('.lesson-checkbox').onclick = (e) => {
+      e.stopPropagation();
+      toggleLessonComplete(lesson.relPath);
+    };
+    itemEl.onclick = () => loadLesson(lesson);
+    itemEl.onkeydown = (e) => {
+      if (e.key === 'Enter') loadLesson(lesson);
+    };
+    listDiv.appendChild(itemEl);
+  });
 
-      lessonsListDiv.appendChild(itemEl);
-    });
-  }
+  // 2. Supplementary files (download in a new tab via the Resources logic)
+  (sectionNode.supplementaryFiles || []).filter(f => matchesQuery(f, query)).forEach(file => {
+    const fileEl = document.createElement('a');
+    fileEl.className = 'lesson-item supplementary-item';
+    fileEl.href = getFileUrl(file, true);
+    fileEl.download = file.fileName;
+    fileEl.innerHTML = `
+      <span class="supplementary-spacer">${ICONS.paperclip}</span>
+      <span class="lesson-body">
+        <span class="lesson-title-text" title="${escapeHtml(file.fileName)}">${escapeHtml(file.fileName)}</span>
+        <span class="lesson-meta">${getMediaIcon(file.type)}<span>Resource · ${escapeHtml(file.sizeFormatted || '')}</span></span>
+      </span>
+    `;
+    listDiv.appendChild(fileEl);
+  });
 
-  // 2. Direct supplementary files if any
-  if (sectionNode.supplementaryFiles && sectionNode.supplementaryFiles.length > 0) {
-    const filteredFiles = sectionNode.supplementaryFiles.filter(f => !query || f.title.toLowerCase().includes(query) || f.fileName.toLowerCase().includes(query));
-    filteredFiles.forEach(file => {
-      const suppEl = document.createElement('div');
-      suppEl.className = 'lesson-item supplementary-item';
-      suppEl.innerHTML = `
-        <div class="lesson-item-left">
-          <span class="supplementary-bullet">📦</span>
-          <span class="lesson-icon">${getMediaIcon(file.type)}</span>
-          <span class="lesson-title-text" title="${file.fileName}">${file.fileName}</span>
-        </div>
-        <span class="lesson-meta">${file.sizeFormatted || ''}</span>
-      `;
-      suppEl.onclick = () => {
-        loadLesson(file);
-      };
-      lessonsListDiv.appendChild(suppEl);
-    });
-  }
+  // 3. Nested subfolders
+  (sectionNode.sections || []).forEach(sub => {
+    const subEl = createSectionElement(sub, ctx, depth + 1, containsActiveLesson(sub), null);
+    if (subEl) listDiv.appendChild(subEl);
+  });
 
-  // 3. Child subfolders nested directly inside!
-  if (sectionNode.sections && sectionNode.sections.length > 0) {
-    sectionNode.sections.forEach(subSection => {
-      const subHasActive = containsActiveLesson(subSection);
-      const subEl = createSectionElement(subSection, query, depth + 1, subHasActive || isExpanded);
-      if (subEl) {
-        lessonsListDiv.appendChild(subEl);
-      }
-    });
-  }
-
-  sectionDiv.appendChild(headerDiv);
-  sectionDiv.appendChild(lessonsListDiv);
+  sectionDiv.appendChild(headerBtn);
+  sectionDiv.appendChild(listDiv);
   return sectionDiv;
+}
+
+// URL for a server-scanned file, or an object URL for a browser-picked file
+function getFileUrl(file, download = false) {
+  if (file.fileObject) {
+    if (!file._objectUrl) file._objectUrl = URL.createObjectURL(file.fileObject);
+    return file._objectUrl;
+  }
+  const fullPath = `${state.currentCourse.path}/${file.relPath}`;
+  return `/api/file?path=${encodeURIComponent(fullPath)}${download ? '&download=true' : ''}`;
 }
 
 // Load Lesson into Stage
@@ -784,31 +844,38 @@ async function toggleLessonComplete(relPath) {
 function updateCompleteButtonUI(isCompleted) {
   if (isCompleted) {
     toggleCompleteBtn.classList.add('completed');
-    completeBtnText.textContent = 'Completed ✓';
+    completeBtnText.textContent = 'Completed';
   } else {
     toggleCompleteBtn.classList.remove('completed');
-    completeBtnText.textContent = 'Mark Complete';
+    completeBtnText.textContent = 'Mark as complete';
   }
 }
 
 // Progress Ring & Stats Calculation
 function updateProgressRing() {
   const total = state.allLessonsFlat.length;
-  const completed = Object.values(state.progress.completed || {}).filter(Boolean).length;
+  const completed = countCompletedLessons();
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   progressPercentText.textContent = `${percent}%`;
-  progressCountText.textContent = `${completed} of ${total} completed`;
+  progressCountText.textContent = `${completed} of ${total} complete`;
 
-  // Circumference = 2 * PI * 23 = 144.51
-  const circumference = 144.5;
+  const r = parseFloat(progressCircle.getAttribute('r')) || 15;
+  const circumference = 2 * Math.PI * r;
+  progressCircle.style.strokeDasharray = circumference;
   const offset = circumference - (percent / 100) * circumference;
   progressCircle.style.strokeDashoffset = offset;
 }
 
+// Only count completions that belong to lessons in the current course
+function countCompletedLessons() {
+  const done = state.progress.completed || {};
+  return state.allLessonsFlat.filter(l => done[l.relPath]).length;
+}
+
 function updateStatsTab() {
   if (!state.currentCourse) return;
-  const completed = Object.values(state.progress.completed || {}).filter(Boolean).length;
+  const completed = countCompletedLessons();
   statTotalLessons.textContent = state.allLessonsFlat.length;
   statTotalVideos.textContent = state.allLessonsFlat.filter(l => l.type === 'video' || l.type === 'audio').length;
   statTotalDocs.textContent = state.allLessonsFlat.filter(l => l.type === 'document' || l.type === 'note').length;
@@ -933,7 +1000,7 @@ function renderNotesTab() {
   notesBadgeCount.textContent = notes.length;
 
   if (notes.length === 0) {
-    notesList.innerHTML = '<div class="empty-state">No notes added yet for this course.</div>';
+    notesList.innerHTML = '<div class="empty-state">No notes yet for this course.</div>';
     return;
   }
 
@@ -945,11 +1012,11 @@ function renderNotesTab() {
       <div class="note-item-main">
         <div class="note-item-meta">
           <button class="note-timestamp-pill" title="Jump to this position">${formatTime(n.time)}</button>
-          <span class="note-lesson-tag">${n.lessonTitle || ''}</span>
+          <span class="note-lesson-tag">${escapeHtml(n.lessonTitle || '')}</span>
         </div>
         <div class="note-text">${escapeHtml(n.text)}</div>
       </div>
-      <button class="note-delete-btn" title="Delete note">&times;</button>
+      <button class="note-delete-btn" title="Delete note" aria-label="Delete note">&times;</button>
     `;
 
     // Jump to timestamp
@@ -1016,7 +1083,7 @@ function updateResourcesTab() {
   resourcesBadgeCount.textContent = foundResources.length;
 
   if (foundResources.length === 0) {
-    resourcesList.innerHTML = '<div class="empty-state">No supplementary files found in this section.</div>';
+    resourcesList.innerHTML = '<div class="empty-state">No resources in this section.</div>';
     return;
   }
 
@@ -1024,20 +1091,15 @@ function updateResourcesTab() {
   foundResources.forEach(res => {
     const card = document.createElement('a');
     card.className = 'resource-card';
-    if (res.fileObject) {
-      card.href = URL.createObjectURL(res.fileObject);
-      card.target = '_blank';
-    } else {
-      const fullPath = `${state.currentCourse.path}/${res.relPath}`;
-      card.href = `/api/file?path=${encodeURIComponent(fullPath)}&download=true`;
-    }
+    card.href = getFileUrl(res, true);
     card.download = res.fileName;
     card.innerHTML = `
+      <span class="resource-icon">${getMediaIcon(res.type)}</span>
       <div class="resource-info">
-        <div class="resource-name">${getMediaIcon(res.type)} ${res.fileName}</div>
-        <div class="resource-meta">${res.sizeFormatted} • Click to download</div>
+        <div class="resource-name" title="${escapeHtml(res.fileName)}">${escapeHtml(res.fileName)}</div>
+        <div class="resource-meta">${escapeHtml(res.sizeFormatted || '')} · Download</div>
       </div>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      ${ICONS.download}
     `;
     resourcesList.appendChild(card);
   });
@@ -1089,7 +1151,7 @@ function setPlaybackSpeed(speed) {
 async function addCourse(folderPath, name = '') {
   if (!folderPath) return;
   submitAddCourseBtn.disabled = true;
-  submitAddCourseBtn.textContent = 'Discovering...';
+  submitAddCourseBtn.textContent = 'Scanning…';
 
   try {
     const res = await fetch('/api/courses/add', {
@@ -1111,7 +1173,7 @@ async function addCourse(folderPath, name = '') {
     alert('Network error adding course folder: ' + err.message);
   } finally {
     submitAddCourseBtn.disabled = false;
-    submitAddCourseBtn.textContent = 'Discover';
+    submitAddCourseBtn.textContent = 'Add';
   }
 }
 
@@ -1119,19 +1181,21 @@ async function addCourse(folderPath, name = '') {
 function renderModalCourseList() {
   modalCoursesList.innerHTML = '';
   if (state.courses.length === 0) {
-    modalCoursesList.innerHTML = '<div class="empty-state">No course libraries registered yet.</div>';
+    modalCoursesList.innerHTML = '<div class="empty-state">No courses yet. Add a folder below to get started.</div>';
     return;
   }
 
   state.courses.forEach(c => {
     const item = document.createElement('div');
-    item.className = 'modal-course-item';
+    const isCurrent = state.currentCourse && state.currentCourse.id === c.id;
+    const pct = Math.max(0, Math.min(100, Number(c.percent) || 0));
+    item.className = `modal-course-item${isCurrent ? ' current' : ''}`;
     item.innerHTML = `
       <div class="modal-course-info">
-        <div class="modal-course-title">📁 ${c.name}</div>
-        <div class="modal-course-path">${c.path}</div>
+        <div class="modal-course-title" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>
+        <div class="modal-course-path" title="${escapeHtml(c.path)}">${escapeHtml(c.path)}</div>
       </div>
-      <div class="modal-course-progress">${c.percent}%</div>
+      <div class="modal-course-progress">${pct}% complete<div class="mini-bar"><span style="width:${pct}%"></span></div></div>
     `;
     item.onclick = () => {
       selectCourse(c.id);
@@ -1150,6 +1214,8 @@ function closeCourseModal() {
 
 // Escape HTML utility
 function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  text = String(text);
   const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
   return text.replace(/[&<>"']/g, m => map[m]);
 }
@@ -1170,12 +1236,29 @@ function setupEventListeners() {
   videoPlayer.onplay = () => {
     playIcon.classList.add('hidden');
     pauseIcon.classList.remove('hidden');
+    videoContainer.classList.remove('is-paused');
   };
   videoPlayer.onpause = () => {
     playIcon.classList.remove('hidden');
     pauseIcon.classList.add('hidden');
+    videoContainer.classList.add('is-paused');
     saveLastWatched();
   };
+
+  // Mute
+  const syncVolumeIcon = () => {
+    volumeOnIcon.classList.toggle('hidden', videoPlayer.muted);
+    volumeOffIcon.classList.toggle('hidden', !videoPlayer.muted);
+  };
+  volumeBtn.onclick = () => { videoPlayer.muted = !videoPlayer.muted; };
+  videoPlayer.onvolumechange = syncVolumeIcon;
+
+  // Prev / next arrows on the video stage
+  stagePrevBtn.onclick = () => navigateLesson(-1);
+  stageNextBtn.onclick = () => navigateLesson(1);
+
+  // Theme
+  themeToggleBtn.onclick = toggleTheme;
 
   // Video Progress & Time Scrubbing
   videoPlayer.ontimeupdate = () => {
@@ -1231,18 +1314,26 @@ function setupEventListeners() {
     }
   };
 
-  theaterBtn.onclick = () => {
-    document.querySelector('.media-stage-wrapper').classList.toggle('theater-mode');
+  // Expanded view = hide the course content sidebar (like standard course players)
+  const setSidebarCollapsed = (collapsed) => {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    try { localStorage.setItem('coursair-sidebar-collapsed', collapsed ? '1' : '0'); } catch (e) {}
   };
+  theaterBtn.onclick = () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+  closeSidebarBtn.onclick = () => setSidebarCollapsed(true);
+  openSidebarBtn.onclick = () => setSidebarCollapsed(false);
+  try {
+    if (localStorage.getItem('coursair-sidebar-collapsed') === '1') document.body.classList.add('sidebar-collapsed');
+  } catch (e) {}
 
   // Subtitles Toggle
   subtitlesToggleBtn.onclick = () => {
     if (subtitleTrack.mode === 'showing') {
       subtitleTrack.mode = 'hidden';
-      subtitlesToggleBtn.style.opacity = '0.5';
+      subtitlesToggleBtn.classList.add('is-off');
     } else {
       subtitleTrack.mode = 'showing';
-      subtitlesToggleBtn.style.opacity = '1';
+      subtitlesToggleBtn.classList.remove('is-off');
     }
   };
 
@@ -1362,6 +1453,7 @@ function setupEventListeners() {
     else if (e.key === '3') setPlaybackSpeed(1.5);
     else if (e.key === '4') setPlaybackSpeed(2);
     else if (e.key === '?') shortcutsBtn.click();
+    else if (e.code === 'KeyD' && !e.ctrlKey && !e.metaKey && !e.altKey) toggleTheme();
     else if (e.code === 'Escape') {
       courseModal.classList.add('hidden');
       shortcutsModal.classList.add('hidden');
