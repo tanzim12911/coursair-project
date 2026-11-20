@@ -16,29 +16,34 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
-<body>
+<body class="view-dashboard">
   <!-- Top Bar -->
   <header class="topbar">
     <div class="topbar-left">
-      <div class="brand">
+      <a href="#/" class="brand" title="My learning">
         <svg class="brand-logo" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
           <polyline points="2 17 12 22 22 17"></polyline>
           <polyline points="2 12 12 17 22 12"></polyline>
         </svg>
         <span class="brand-name">Coursair</span>
-      </div>
+      </a>
       <span class="topbar-divider" aria-hidden="true"></span>
-      <button id="course-selector-btn" class="course-switch" title="Switch or add course">
+      <span class="topbar-page-title player-hide">My learning</span>
+      <button id="course-selector-btn" class="course-switch dashboard-hide" title="Switch or add course">
         <span id="current-course-title" class="course-switch-title">Loading course…</span>
         <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
     </div>
 
     <div class="topbar-actions">
-      <div class="progress-summary" title="Your progress">
+      <a href="#/" class="topbar-link dashboard-hide">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>My learning</span>
+      </a>
+      <div class="progress-summary dashboard-hide" title="Your progress">
         <div class="progress-ring-wrap">
           <svg class="progress-ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
             <circle class="progress-ring-bg" stroke-width="3" fill="transparent" r="15" cx="18" cy="18"/>
@@ -61,12 +66,61 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
       </button>
 
-      <button id="add-course-nav-btn" class="btn btn-topbar">
+      <button id="add-course-nav-btn" class="btn btn-topbar dashboard-hide">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         <span>Add course</span>
       </button>
     </div>
   </header>
+
+  <!-- Dashboard: all courses -->
+  <main id="dashboard-view" class="dashboard">
+    <div class="dash-inner">
+      <div class="dash-head">
+        <div>
+          <h1 class="dash-title">My learning</h1>
+          <p id="dash-greeting" class="dash-sub">Pick up where you left off.</p>
+        </div>
+        <button id="dash-add-btn" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Add course</span>
+        </button>
+      </div>
+
+      <div id="dash-notice" class="dash-notice hidden" role="alert"></div>
+
+      <div id="dash-content">
+        <dl id="dash-stats" class="dash-stats"></dl>
+
+        <section id="dash-continue" class="dash-continue hidden" aria-label="Continue learning"></section>
+
+        <div class="dash-toolbar">
+          <div class="dash-filters" role="tablist" aria-label="Filter courses">
+            <button class="dash-filter active" data-filter="all" role="tab">All courses</button>
+            <button class="dash-filter" data-filter="progress" role="tab">In progress</button>
+            <button class="dash-filter" data-filter="new" role="tab">Not started</button>
+            <button class="dash-filter" data-filter="done" role="tab">Completed</button>
+          </div>
+          <div class="search-box dash-search">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="dash-search-input" placeholder="Search my courses" autocomplete="off" aria-label="Search my courses">
+          </div>
+        </div>
+
+        <div id="dash-grid" class="course-grid"></div>
+      </div>
+
+      <div id="dash-empty" class="dash-empty hidden">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <h2>Your library is empty</h2>
+        <p>Add a folder of downloaded course videos and Coursair turns it into a course you can track.</p>
+        <div class="dash-empty-actions">
+          <button id="dash-empty-add-btn" class="btn btn-primary">Add a course folder</button>
+          <button id="dash-sample-btn" class="btn btn-outline">Try the sample course</button>
+        </div>
+      </div>
+    </div>
+  </main>
 
   <div class="app-layout">
     <!-- Main column: player + tabs -->
@@ -338,6 +392,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

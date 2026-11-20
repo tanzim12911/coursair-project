@@ -11,7 +11,11 @@ const state = {
   autoPlayTimer: null,
   mediaReady: false,   // true once the current video's metadata loaded and any resume seek happened
   playerUrls: [],      // object URLs to revoke on the next lesson load
-  subtitlesOn: true
+  subtitlesOn: true,
+  samplePath: null,
+  dashFilter: 'all',
+  dashQuery: '',
+  dashNotice: null
 };
 
 // DOM Elements
@@ -196,11 +200,336 @@ function renderMarkdown(md) {
   return html;
 }
 
+// ---------- Routing: #/ = dashboard, #/course/<id> = player ----------
+function currentRoute() {
+  const m = location.hash.match(/^#\/course\/(.+)$/);
+  return m ? { view: 'course', id: decodeURIComponent(m[1]) } : { view: 'dashboard' };
+}
+
+function courseHash(id) {
+  return '#/course/' + encodeURIComponent(id);
+}
+
+// Navigate to a course; re-runs the route even if the hash is already that course
+function openCourse(id) {
+  const target = courseHash(id);
+  if (location.hash === target) handleRoute();
+  else location.hash = target;
+}
+
+function goDashboard() {
+  if (location.hash === '#/' || location.hash === '') handleRoute();
+  else location.hash = '#/';
+}
+
+function showView(view) {
+  document.body.classList.toggle('view-dashboard', view === 'dashboard');
+  document.body.classList.toggle('view-player', view === 'player');
+  document.title = view === 'player' && state.currentCourse ? `${state.currentCourse.name} · Coursair` : 'My learning · Coursair';
+}
+
+// Stop playback and save the spot when leaving the player
+function leavePlayer() {
+  if (!document.body.classList.contains('view-player')) return;
+  flushPosition();
+  videoPlayer.pause();
+  cancelAutoplay();
+  hideResumeToast();
+}
+
+async function handleRoute() {
+  const route = currentRoute();
+  if (route.view === 'course') {
+    const loaded = state.currentCourse && state.currentCourse.id === route.id;
+    // Browser-picked courses live only in memory: keep them as they are
+    if (loaded && state.currentCourse.isLocalFiles) {
+      showView('player');
+      return;
+    }
+    showView('player');
+    const ok = await selectCourse(route.id);
+    if (!ok) {
+      state.dashNotice = route.id.startsWith('local_')
+        ? 'Courses opened with "Choose a course folder" have to be picked again after the page reloads.'
+        : 'That course could not be opened. Its folder may have been moved, renamed or deleted.';
+      goDashboard();
+      return;
+    }
+    showView('player');
+  } else {
+    leavePlayer();
+    showView('dashboard');
+    await refreshCoursesList();
+    renderDashboard();
+    window.scrollTo(0, 0);
+  }
+}
+
+// ---------- Dashboard ----------
+const dashGreeting = document.getElementById('dash-greeting');
+const dashNotice = document.getElementById('dash-notice');
+const dashContent = document.getElementById('dash-content');
+const dashStats = document.getElementById('dash-stats');
+const dashContinue = document.getElementById('dash-continue');
+const dashGrid = document.getElementById('dash-grid');
+const dashEmpty = document.getElementById('dash-empty');
+const dashSearchInput = document.getElementById('dash-search-input');
+const dashFilterButtons = document.querySelectorAll('.dash-filter');
+const dashAddBtn = document.getElementById('dash-add-btn');
+const dashEmptyAddBtn = document.getElementById('dash-empty-add-btn');
+const dashSampleBtn = document.getElementById('dash-sample-btn');
+
+const PLAY_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>';
+const DOTS_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+
+function courseStats(c) {
+  const total = c.totalLessons || 0;
+  const done = Math.min(c.completedCount || 0, total);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const started = done > 0 || !!(c.lastWatched && c.lastWatched.path);
+  const status = total > 0 && done >= total ? 'done' : started ? 'progress' : 'new';
+  const lastActivity = c.lastWatched && c.lastWatched.updatedAt ? Date.parse(c.lastWatched.updatedAt) || 0 : 0;
+  return { total, done, pct, status, lastActivity };
+}
+
+// Deterministic cover colours from the course name
+function coverStyle(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = h % 360;
+  return `background: linear-gradient(135deg, hsl(${hue} 58% 44%), hsl(${(hue + 50) % 360} 62% 30%));`;
+}
+
+function courseInitials(name) {
+  const words = String(name).replace(/\(.*?\)/g, ' ').split(/[^A-Za-z0-9]+/).filter(w => w.length > 1 || /\d/.test(w));
+  const letters = words.slice(0, 2).map(w => w[0].toUpperCase()).join('');
+  return letters || '?';
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = s / 60, h = m / 60, d = h / 24;
+  if (m < 60) return `${Math.floor(m)} min ago`;
+  if (h < 24) return `${Math.floor(h)} h ago`;
+  if (d < 2) return 'yesterday';
+  if (d < 30) return `${Math.floor(d)} days ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+function progressBlock(s) {
+  return `
+    <div class="course-progress${s.status === 'done' ? ' done' : ''}">
+      <div class="course-progress-bar"><span style="width:${s.pct}%"></span></div>
+      <div class="course-progress-label"><span>${s.done} of ${s.total} lessons</span><strong>${s.status === 'done' ? 'Completed' : s.pct + '%'}</strong></div>
+    </div>`;
+}
+
+function renderDashboard() {
+  const items = state.courses.map(c => ({ c, s: courseStats(c) }));
+
+  if (state.dashNotice) {
+    dashNotice.textContent = state.dashNotice;
+    dashNotice.classList.remove('hidden');
+    state.dashNotice = null;
+  } else {
+    dashNotice.classList.add('hidden');
+  }
+
+  const isEmpty = items.length === 0;
+  dashEmpty.classList.toggle('hidden', !isEmpty);
+  dashContent.classList.toggle('hidden', isEmpty);
+  dashSampleBtn.classList.toggle('hidden', !state.samplePath);
+  if (isEmpty) {
+    dashGreeting.textContent = 'Turn your downloaded courses into a learning dashboard.';
+    return;
+  }
+
+  // Summary numbers
+  const inProgress = items.filter(i => i.s.status === 'progress').length;
+  const completed = items.filter(i => i.s.status === 'done').length;
+  const lessonsDone = items.reduce((n, i) => n + i.s.done, 0);
+  const lessonsTotal = items.reduce((n, i) => n + i.s.total, 0);
+  dashGreeting.textContent = inProgress
+    ? `You have ${inProgress} course${inProgress === 1 ? '' : 's'} in progress. Pick up where you left off.`
+    : 'Start a course to begin tracking your progress.';
+  dashStats.innerHTML = `
+    <div class="dash-stat"><dt>Courses</dt><dd>${items.length}</dd></div>
+    <div class="dash-stat"><dt>In progress</dt><dd>${inProgress}</dd></div>
+    <div class="dash-stat"><dt>Completed</dt><dd>${completed}</dd></div>
+    <div class="dash-stat"><dt>Lessons done</dt><dd>${lessonsDone} <small>/ ${lessonsTotal}</small></dd></div>
+  `;
+
+  // Continue learning: most recently watched, unfinished, folder still present
+  const recent = items
+    .filter(i => i.c.exists !== false && i.s.lastActivity && i.s.status !== 'done')
+    .sort((a, b) => b.s.lastActivity - a.s.lastActivity)[0];
+  if (recent) {
+    const { c, s } = recent;
+    const lw = c.lastWatched || {};
+    const at = lw.time > 0 ? ` · ${formatTime(lw.time)} in` : '';
+    dashContinue.innerHTML = `
+      <a class="course-card-link" href="${courseHash(c.id)}" tabindex="-1" aria-hidden="true">
+        <div class="course-cover" style="${coverStyle(c.name)}">
+          <span class="course-cover-initials">${escapeHtml(courseInitials(c.name))}</span>
+        </div>
+      </a>
+      <div class="continue-body">
+        <div class="continue-eyebrow">Continue learning</div>
+        <div class="continue-course">${escapeHtml(c.name)}</div>
+        <div class="continue-lesson">${escapeHtml(lw.title || 'Next lesson')}${at} · ${escapeHtml(timeAgo(s.lastActivity))}</div>
+        <div class="continue-foot">
+          ${progressBlock(s)}
+          <a class="btn btn-primary" href="${courseHash(c.id)}">${PLAY_SVG.replace('22', '16').replace('22', '16')}<span>Resume</span></a>
+        </div>
+      </div>
+    `;
+    dashContinue.classList.remove('hidden');
+  } else {
+    dashContinue.classList.add('hidden');
+  }
+
+  // Filter counts
+  const counts = { all: items.length, progress: inProgress, new: items.filter(i => i.s.status === 'new').length, done: completed };
+  dashFilterButtons.forEach(btn => {
+    const f = btn.dataset.filter;
+    btn.classList.toggle('active', f === state.dashFilter);
+    btn.setAttribute('aria-selected', String(f === state.dashFilter));
+    const label = btn.textContent.replace(/\s*\d+$/, '');
+    btn.innerHTML = `${escapeHtml(label)}<span class="count">${counts[f]}</span>`;
+  });
+
+  // Grid
+  const q = state.dashQuery.trim().toLowerCase();
+  const shown = items
+    .filter(i => state.dashFilter === 'all' || i.s.status === state.dashFilter)
+    .filter(i => !q || i.c.name.toLowerCase().includes(q) || (i.c.path || '').toLowerCase().includes(q))
+    .sort((a, b) => (b.s.lastActivity - a.s.lastActivity) || (Date.parse(b.c.addedAt || 0) - Date.parse(a.c.addedAt || 0)));
+
+  dashGrid.innerHTML = '';
+  shown.forEach(({ c, s }) => dashGrid.appendChild(createCourseCard(c, s)));
+
+  if (shown.length === 0) {
+    dashGrid.innerHTML = `<div class="empty-state grid-empty">No courses match ${q ? 'your search' : 'this filter'}.</div>`;
+  } else if (state.dashFilter === 'all' && !q) {
+    const addCard = document.createElement('button');
+    addCard.type = 'button';
+    addCard.className = 'add-course-card';
+    addCard.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span>Add a course</span>`;
+    addCard.onclick = openCourseModal;
+    dashGrid.appendChild(addCard);
+  }
+}
+
+function createCourseCard(c, s) {
+  const missing = c.exists === false;
+  const card = document.createElement('article');
+  card.className = `course-card${missing ? ' is-missing' : ''}`;
+
+  const lw = c.lastWatched;
+  const lastLine = missing
+    ? `<div class="course-card-missing" title="${escapeHtml(c.path)}">Folder not found</div>`
+    : lw && lw.title
+      ? `<div class="course-card-last" title="${escapeHtml(lw.title)}">Last: ${escapeHtml(lw.title)} · ${escapeHtml(timeAgo(s.lastActivity))}</div>`
+      : `<div class="course-card-last">Not started yet</div>`;
+
+  const cover = `
+    <div class="course-cover" style="${coverStyle(c.name)}">
+      <span class="course-cover-initials">${escapeHtml(courseInitials(c.name))}</span>
+      <span class="course-cover-badge">${c.totalVideos || 0} video${c.totalVideos === 1 ? '' : 's'}</span>
+      ${missing ? '' : `<span class="course-cover-play"><span>${PLAY_SVG}</span></span>`}
+    </div>`;
+  const title = `<h3 class="course-card-title" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</h3>`;
+  const href = courseHash(c.id);
+
+  card.innerHTML = `
+    ${missing ? cover : `<a class="course-card-link" href="${href}" tabindex="-1" aria-hidden="true">${cover}</a>`}
+    <button type="button" class="course-card-menu-btn" aria-label="Course options" aria-haspopup="true">${DOTS_SVG}</button>
+    <div class="course-card-body">
+      ${missing ? title : `<a class="course-card-link" href="${href}">${title}</a>`}
+      <div class="course-card-meta">${c.totalLessons || 0} lessons · ${c.totalVideos || 0} videos · ${c.totalDocs || 0} docs</div>
+      ${lastLine}
+      ${progressBlock(s)}
+    </div>
+  `;
+
+  const menuBtn = card.querySelector('.course-card-menu-btn');
+  menuBtn.onclick = (e) => {
+    e.stopPropagation();
+    const wasOpen = card.classList.contains('menu-open');
+    closeCourseMenus();
+    if (wasOpen) return;
+    card.classList.add('menu-open');
+    const menu = document.createElement('div');
+    menu.className = 'course-card-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = `
+      ${missing ? '' : '<button type="button" data-act="open" role="menuitem">Open course</button>'}
+      <button type="button" data-act="copy" role="menuitem">Copy folder path</button>
+      <button type="button" data-act="remove" class="danger" role="menuitem">Remove from library</button>
+    `;
+    menu.onclick = async (ev) => {
+      ev.stopPropagation();
+      const act = ev.target.closest('button') && ev.target.closest('button').dataset.act;
+      closeCourseMenus();
+      if (act === 'open') openCourse(c.id);
+      if (act === 'copy') { try { await navigator.clipboard.writeText(c.path); } catch (err) {} }
+      if (act === 'remove') removeCourse(c);
+    };
+    card.appendChild(menu);
+  };
+  return card;
+}
+
+function closeCourseMenus() {
+  document.querySelectorAll('.course-card.menu-open').forEach(card => {
+    card.classList.remove('menu-open');
+    const menu = card.querySelector('.course-card-menu');
+    if (menu) menu.remove();
+  });
+}
+
+async function removeCourse(c) {
+  const ok = window.confirm(`Remove "${c.name}" from your library?\n\nYour progress and notes for this course will be deleted. The course files on your disk are not touched.`);
+  if (!ok) return;
+  try {
+    const res = await fetch(`/api/courses/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (state.currentCourse && state.currentCourse.id === c.id) state.currentCourse = null;
+  } catch (err) {
+    state.dashNotice = `Could not remove the course: ${err.message}`;
+  }
+  await refreshCoursesList();
+  renderDashboard();
+}
+
+function setupDashboardListeners() {
+  dashAddBtn.onclick = openCourseModal;
+  dashEmptyAddBtn.onclick = openCourseModal;
+  dashSampleBtn.onclick = () => {
+    if (state.samplePath) addCourse(state.samplePath, 'Full-Stack Modern Architecture (Sample Course)');
+  };
+  dashFilterButtons.forEach(btn => {
+    btn.onclick = () => {
+      state.dashFilter = btn.dataset.filter;
+      renderDashboard();
+    };
+  });
+  dashSearchInput.oninput = () => {
+    state.dashQuery = dashSearchInput.value;
+    renderDashboard();
+  };
+  document.addEventListener('click', closeCourseMenus);
+  window.addEventListener('hashchange', handleRoute);
+}
+
 // Initialize Application
 async function initApp() {
   setupEventListeners();
+  setupDashboardListeners();
   await loadSystemFolders();
-  await refreshCoursesList();
+  await handleRoute();
 }
 
 // Load System Folders
@@ -210,6 +539,7 @@ async function loadSystemFolders() {
     const data = await res.json();
     quickFolderChips.innerHTML = '';
 
+    state.samplePath = data.samplePath || null;
     if (data.samplePath) {
       const sampleChip = document.createElement('button');
       sampleChip.className = 'quick-chip-btn featured';
@@ -249,15 +579,6 @@ async function refreshCoursesList() {
     }
 
     renderModalCourseList();
-
-    if (state.courses.length > 0) {
-      // Pick last used or first course
-      const targetCourse = state.courses[0];
-      await selectCourse(targetCourse.id);
-    } else {
-      currentCourseTitle.textContent = 'No Courses Loaded — Click to Add';
-      openCourseModal();
-    }
   } catch (err) {
     console.error('Error fetching courses:', err);
   }
@@ -475,6 +796,9 @@ function buildCourseFromFileItems(courseName, fileItems) {
   renderNotesTab();
 
   resumeCourse();
+  const target = courseHash(courseId);
+  if (location.hash === target) showView('player');
+  else location.hash = target;
 }
 
 // Open the last lesson the user had open in this course (its video resumes by itself)
@@ -512,8 +836,10 @@ async function selectCourse(courseId) {
     renderNotesTab();
 
     resumeCourse();
+    return true;
   } catch (err) {
     console.error('Failed to load course details:', err);
+    return false;
   }
 }
 
@@ -1291,8 +1617,9 @@ async function addCourse(folderPath, name = '') {
     }
 
     coursePathInput.value = '';
+    closeCourseModal();
     await refreshCoursesList();
-    await selectCourse(data.course.id);
+    openCourse(data.course.id);
   } catch (err) {
     alert('Network error adding course folder: ' + err.message);
   } finally {
@@ -1322,7 +1649,8 @@ function renderModalCourseList() {
       <div class="modal-course-progress">${pct}% complete<div class="mini-bar"><span style="width:${pct}%"></span></div></div>
     `;
     item.onclick = () => {
-      selectCourse(c.id);
+      closeCourseModal();
+      openCourse(c.id);
     };
     modalCoursesList.appendChild(item);
   });
@@ -1562,6 +1890,17 @@ function setupEventListeners() {
   window.onkeydown = (e) => {
     // If typing in input, don't trigger media shortcuts
     if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+    if (document.body.classList.contains('view-dashboard')) {
+      if (e.key === '?') shortcutsBtn.click();
+      else if (e.code === 'KeyD' && !e.ctrlKey && !e.metaKey && !e.altKey) toggleTheme();
+      else if (e.code === 'Escape') {
+        courseModal.classList.add('hidden');
+        shortcutsModal.classList.add('hidden');
+        closeCourseMenus();
+      }
+      return;
+    }
 
     if (e.code === 'Space') {
       e.preventDefault();
