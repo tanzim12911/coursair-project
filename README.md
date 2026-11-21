@@ -1,37 +1,47 @@
-# Coursair
+<h1 align="center">Coursair</h1>
 
-Coursair turns a folder of downloaded course videos into a course player that runs in your browser, similar to Udemy or Coursera. It runs on your own computer, so nothing is uploaded and no account is needed.
+<p align="center">
+  <strong>An offline course player for the video courses you've downloaded.</strong><br>
+  Point it at a folder and get a Udemy-style dashboard with progress tracking, resume, subtitles and notes. It runs entirely on your computer.
+</p>
 
-Point it at a course folder. It builds the curriculum from the folder structure, remembers where you stopped in every video, and tracks your progress across all your courses.
+<p align="center">
+  <a href="https://github.com/tanzim12911/coursair-project/actions/workflows/ci.yml"><img src="https://github.com/tanzim12911/coursair-project/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node 18 or newer">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg" alt="Windows, macOS, Linux">
+</p>
 
-## Features
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
+    <img src="docs/screenshots/dashboard-light.png" alt="Coursair dashboard showing four courses with thumbnails and progress bars" width="900">
+  </picture>
+</p>
 
-**Dashboard**
-- A "My learning" home page shows every course with its progress, time left and when you last watched it.
-- Continue where you left off with one click.
-- Filter courses by in progress, not started or completed, or search by name.
-- Each course card shows a frame from the course's first video as its thumbnail. If the course folder has its own cover image (`cover`, `thumbnail`, `poster` or `folder` as .jpg, .png or .webp), that is used instead.
+## Why Coursair?
 
-**Course player**
-- Builds sections and lessons from nested folders, in natural number order (`2 - …` comes before `10 - …`).
-- Remembers your position in each video, and offers to resume when you come back.
-- Streams large video files with instant seeking, without loading the whole file.
-- Shows subtitles from `.srt` or `.vtt` files that sit next to the video, such as `Lesson.srt` or `Lesson.en.srt`.
-- Lets you set the playback speed, use fullscreen or expanded view, and turn on autoplay for the next lesson.
-- Opens PDFs and Markdown or text notes inside the player. Other files (code, archives) appear as lesson resources.
+You bought a course, downloaded it, and now it's a folder of files named `01 - Intro.mp4`, `02 - Setup.mp4`, … Watching it in a regular video player means you lose track of what you've finished, where you stopped, and which notes go with which lesson.
 
-**Progress and notes**
-- Mark lessons complete; a progress ring shows how far through the course you are.
-- Add notes at a timestamp, and click a note to jump back to that moment.
-- Export your notes for a course as Markdown.
+Coursair gives that folder the experience of an online course platform, without uploading anything or creating an account:
 
-**Comfort**
-- Light and dark themes. It follows your system setting until you choose one.
-- Keyboard shortcuts for everything (press <kbd>?</kbd> in the app to see them).
+- **No setup per course.** It reads the sections and lessons straight from your folder structure.
+- **Picks up where you left off**, in every video of every course.
+- **Private and offline.** Your files never leave your computer, and there is no tracking.
+- **Works with what you have.** Videos, subtitles, PDFs, notes and resource files, in nested folders, in the right order.
 
-## Getting started
+## Quick start
 
-You need [Node.js](https://nodejs.org) 18 or newer.
+You need [Node.js](https://nodejs.org) 18 or newer. Then run:
+
+```bash
+npx github:tanzim12911/coursair-project
+```
+
+Open **http://localhost:3600**, click **Add course**, and choose a course folder. That's it.
+
+<details>
+<summary>Or clone the repository</summary>
 
 ```bash
 git clone https://github.com/tanzim12911/coursair-project.git
@@ -40,34 +50,47 @@ npm install
 npm start
 ```
 
-Then open **http://localhost:3600**.
+When run this way, your library is stored in the project's `data/` folder.
+</details>
 
-To use a different port, set the `PORT` environment variable:
+## Features
 
-```bash
-PORT=4000 npm start          # macOS / Linux
-$env:PORT=4000; npm start    # Windows PowerShell
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/player-dark.png">
+    <img src="docs/screenshots/player-light.png" alt="Coursair course player with the video, lesson list and progress" width="900">
+  </picture>
+</p>
 
-### Adding a course
+**Dashboard**
+- All your courses in one place, with progress, time since you last watched, and a thumbnail taken from each course's videos.
+- **Continue learning** jumps straight back to the last lesson you watched.
+- Filter by in progress, not started or completed, or search by name.
 
-1. On the dashboard, click **Add course**.
-2. Click **Choose a course folder** and pick the folder in your system's folder dialog, or paste the folder's path into the box.
-3. The course appears on your dashboard and stays there after you restart.
+**Course player**
+- Builds sections and lessons from nested folders, in natural number order (`2 - …` comes before `10 - …`).
+- Remembers your position in every video and offers to resume.
+- Streams large files with instant seeking, even multi-gigabyte videos.
+- Subtitles from `.srt` or `.vtt` files next to the video (`Lesson.srt`, `Lesson.en.srt`).
+- Playback speed, fullscreen, expanded view, autoplay of the next lesson.
+- Opens PDFs and Markdown or text notes inside the player; other files appear as lesson resources.
 
-The folder dialog works on Windows, macOS, and Linux. On Linux it needs `zenity` or `kdialog`. If neither is installed, paste the path instead.
+**Progress and notes**
+- Mark lessons complete and watch your progress ring fill up.
+- Take notes at a timestamp, then click a note to jump back to that moment.
+- Export a course's notes as Markdown.
 
-**Open a folder for this session only** loads a course straight from the browser without saving it to your library. That's useful for a quick look. If you later add the same folder properly, the progress you made is carried over.
-
-A sample course is included in [sample-course/](sample-course/) so you can try the app right away. You can add it from the empty dashboard.
+**Comfort**
+- Light and dark themes that follow your system setting.
+- Keyboard shortcuts for everything (press <kbd>?</kbd> in the app).
 
 ## How a course folder should look
 
-Coursair works with the folder layout most course downloads already use. Each top-level folder becomes a section, and each video, PDF or note becomes a lesson:
+Coursair works with the layout most course downloads already have. Each folder becomes a section, and each video, PDF or note becomes a lesson:
 
 ```
 My Course/
-├── cover.jpg                      (optional course thumbnail)
+├── cover.jpg                      (optional: the course thumbnail)
 ├── 01 - Getting Started/
 │   ├── 01 - Welcome.mp4
 │   ├── 01 - Welcome.en.srt        (subtitles for 01 - Welcome.mp4)
@@ -78,8 +101,6 @@ My Course/
     └── starter-code.zip           (shown as a resource)
 ```
 
-Supported files:
-
 | Kind | Extensions |
 | --- | --- |
 | Video | `.mp4` `.mkv` `.webm` `.mov` `.m4v` `.avi` `.ts` |
@@ -87,9 +108,30 @@ Supported files:
 | Documents | `.pdf` |
 | Notes | `.md` `.txt` |
 | Subtitles | `.srt` `.vtt` |
-| Archives (resources) | `.zip` `.rar` `.7z` `.tar` `.gz` |
+| Resources | `.zip` `.rar` `.7z` `.tar` `.gz` and any other file |
 
-Videos play in your browser, so playback depends on what the browser can decode. MP4 (H.264) and WebM work everywhere. Some `.mkv`, `.avi`, and HEVC files may not play; converting them to MP4 fixes that.
+If the folder contains an image named `cover`, `thumbnail`, `poster` or `folder` (`.jpg`, `.png` or `.webp`), it's used as the course thumbnail. Otherwise Coursair grabs a frame from the first video.
+
+## Adding courses
+
+Click **Add course**, then **Choose a course folder** to pick it in your system's folder dialog, or paste the folder's path. The course stays in your library after restarts.
+
+- The folder dialog works on Windows and macOS. On Linux it needs `zenity` or `kdialog`. Without them, paste the path instead.
+- **Open a folder for this session only** loads a course in the browser without saving it to your library. If you add the same folder later, your progress carries over.
+- A small sample course is included, so you can try Coursair before adding your own.
+
+## Options
+
+| Option | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `--port <n>` | `PORT` | `3600` | Port to listen on |
+| `--host <address>` | `HOST` | `127.0.0.1` | Address to listen on. Use `0.0.0.0` to open Coursair from other devices on your network. |
+| `--data <folder>` | `COURSAIR_DATA_DIR` | `~/.coursair` with npx, `./data` with `npm start` | Where your library and progress are stored |
+
+```bash
+npx github:tanzim12911/coursair-project --port 4000
+PORT=4000 npm start
+```
 
 ## Keyboard shortcuts
 
@@ -107,32 +149,31 @@ Videos play in your browser, so playback depends on what the browser can decode.
 | Light / dark mode | <kbd>D</kbd> |
 | Show shortcuts | <kbd>?</kbd> |
 
-## Where your data is stored
+## FAQ
 
-Everything stays on your computer, in the `data/` folder of the project:
+**Does it upload my videos anywhere?**
+No. Coursair is a small server running on your own computer, and your browser talks only to it. There are no accounts, analytics or network calls.
 
-- `data/coursair-db.json` holds your course library, completed lessons, notes and video positions.
-- `data/thumbnails/` holds the generated course thumbnails.
+**Some of my videos don't play.**
+Videos play in your browser, so they need a format it can decode. MP4 (H.264) and WebM work everywhere. Some `.mkv`, `.avi` and HEVC/H.265 files don't. Converting them to MP4 fixes this, for example with `ffmpeg -i input.mkv -c copy output.mp4` (or `-c:v libx264` if copying isn't enough).
 
-Your course videos are never copied or changed. To start fresh, stop the server and delete `data/`. The folder is ignored by git, so your progress is never committed.
+**Where is my progress stored? How do I back it up?**
+In one JSON file, `coursair-db.json`, inside the data folder (see [Options](#options)). Copy that folder to back it up or move it to another computer. Your course files are never changed.
 
-## Security note
+**Can I watch on my phone or another computer?**
+Start Coursair with `--host 0.0.0.0` and open `http://<your-computer's-IP>:3600` on the other device. Only do this on a network you trust, because anyone on it can then open your course files.
 
-Coursair is meant to run on your own machine for your own use. The server can read files from the folders you give it, so don't expose port 3600 to the internet or to networks you don't trust.
+**I moved a course folder and now it's broken.**
+Add the folder again from its new location. If you remove the old entry first, its progress is removed too.
 
-## Project structure
+## Security
 
-```
-server.js                  Express server: course scanning, video streaming, progress API
-public/index.html          App shell (dashboard and player)
-public/app.js              Frontend logic (vanilla JavaScript, no build step)
-public/style.css           Styles and light/dark theme
-sample-course/             Small demo course
-create-sample-course.js    Regenerates the sample course (needs ffmpeg)
-```
-
-There is no build step. Edit the files and refresh the browser; restart `npm start` after changing `server.js`.
+Coursair only accepts connections from your own computer unless you change `--host`. It serves files only from course folders in your library, and blocks requests from other websites. See [SECURITY.md](SECURITY.md) to report a problem.
 
 ## Contributing
 
-Issues and pull requests are welcome. For larger changes, please open an issue first to discuss what you'd like to change.
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up; there's no build step.
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/tanzim12911/coursair-project/security/advisories/new
+    about: Please report security problems privately instead of opening a public issue.

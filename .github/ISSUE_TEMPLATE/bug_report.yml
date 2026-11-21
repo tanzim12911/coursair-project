@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a course with this folder layout: ...
+        2. Open lesson ...
+        3. ...
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11, macOS 15, Ubuntu 24.04, ...
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 131, Firefox 133, Safari 18, ...
+  - type: input
+    id: version
+    attributes:
+      label: Coursair version or commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors
+      description: Anything printed in the terminal running Coursair, or in the browser console (F12).
+      render: text
