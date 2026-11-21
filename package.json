@@ -1,11 +1,54 @@
 {
   "name": "coursair",
   "version": "1.0.0",
-  "description": "Offline Course Dashboard & Media Player",
+  "description": "Offline course player for downloaded video courses. Turns a folder of videos into a Udemy-style dashboard with progress tracking, resume, subtitles and notes.",
+  "keywords": [
+    "offline",
+    "course",
+    "course-player",
+    "video-player",
+    "local",
+    "udemy",
+    "lms",
+    "e-learning",
+    "self-hosted",
+    "progress-tracker",
+    "video-course",
+    "learning",
+    "subtitles",
+    "media-player"
+  ],
+  "homepage": "https://github.com/tanzim12911/coursair-project#readme",
+  "bugs": {
+    "url": "https://github.com/tanzim12911/coursair-project/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tanzim12911/coursair-project.git"
+  },
+  "license": "MIT",
+  "author": "tanzim12911",
   "type": "module",
   "main": "server.js",
+  "bin": {
+    "coursair": "bin/coursair.js"
+  },
+  "files": [
+    "server.js",
+    "bin/",
+    "public/",
+    "sample-course/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "sample:generate": "node create-sample-course.js",
+    "check": "node --check server.js && node --check bin/coursair.js && node --check public/app.js && node --check scripts/smoke-test.mjs",
+    "test": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",
