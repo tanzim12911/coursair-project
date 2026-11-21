@@ -328,6 +328,170 @@ function progressBlock(s) {
     </div>`;
 }
 
+// ---------- Course thumbnails ----------
+// Captured in the browser from the course's first video (no ffmpeg needed), then cached by the
+// server. Videos the browser can't decode keep the initials cover.
+const THUMB_FAIL_KEY = 'coursair-thumb-failed';
+const thumbQueue = [];
+const thumbQueued = new Set();
+let thumbBusy = false;
+
+function readThumbFailures() {
+  try { return JSON.parse(localStorage.getItem(THUMB_FAIL_KEY) || '{}'); } catch (e) { return {}; }
+}
+function setThumbFailure(courseId, firstVideo) {
+  const failed = readThumbFailures();
+  if (firstVideo) failed[courseId] = firstVideo; else delete failed[courseId];
+  try { localStorage.setItem(THUMB_FAIL_KEY, JSON.stringify(failed)); } catch (e) {}
+}
+
+function thumbnailUrl(c) {
+  return `/api/courses/${encodeURIComponent(c.id)}/thumbnail?v=${c.thumbnailVersion}`;
+}
+
+// <img> layered over the gradient + initials; removed if it fails to load
+function coverImage(c) {
+  return c.thumbnailVersion
+    ? `<img class="course-cover-img" src="${thumbnailUrl(c)}" alt="" loading="lazy" onerror="this.remove()">`
+    : '';
+}
+
+// Update every cover of this course already on screen
+function applyThumbnail(c) {
+  document.querySelectorAll(`[data-thumb-for="${CSS.escape(c.id)}"]`).forEach(cover => {
+    const old = cover.querySelector('.course-cover-img');
+    if (old) old.remove();
+    if (c.thumbnailVersion) cover.insertAdjacentHTML('afterbegin', coverImage(c));
+  });
+}
+
+// Draw the frame scaled to fill the canvas (crop, no letterboxing)
+function drawCover(ctx, video, w, h) {
+  const scale = Math.max(w / video.videoWidth, h / video.videoHeight);
+  const dw = video.videoWidth * scale, dh = video.videoHeight * scale;
+  ctx.drawImage(video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
+function averageBrightness(ctx, w, h) {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  let sum = 0, n = 0;
+  for (let i = 0; i < data.length; i += 64) { // every 16th pixel
+    sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    n++;
+  }
+  return n ? sum / n : 0;
+}
+
+// Seek through candidate points and return the first reasonably bright frame as a JPEG blob
+function captureVideoFrame(src, fractions) {
+  return new Promise((resolve, reject) => {
+    const W = 640, H = 360;
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let index = 0;
+    let best = null; // brightest frame so far, used if none is bright enough
+    let done = false;
+
+    const timer = setTimeout(() => finish(new Error('timed out')), 20000);
+    function finish(err, blob) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeAttribute('src');
+      video.load();
+      err ? reject(err) : resolve(blob);
+    }
+    function seekNext() {
+      if (index >= fractions.length) {
+        return best && best.brightness > 12 ? finish(null, best.blob) : finish(new Error('no usable frame'));
+      }
+      const t = video.duration * fractions[index++];
+      video.currentTime = Math.max(0, Math.min(t, video.duration - 0.5));
+    }
+
+    video.onloadedmetadata = () => {
+      if (!video.videoWidth || !isFinite(video.duration) || video.duration <= 0) return finish(new Error('no video track'));
+      seekNext();
+    };
+    video.onseeked = async () => {
+      if (done) return;
+      try {
+        drawCover(ctx, video, W, H);
+        const brightness = averageBrightness(ctx, W, H);
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.82));
+        if (!blob) return finish(new Error('encode failed'));
+        if (brightness >= 45) return finish(null, blob);
+        if (!best || brightness > best.brightness) best = { brightness, blob };
+        seekNext();
+      } catch (err) {
+        finish(err);
+      }
+    };
+    video.onerror = () => finish(new Error('cannot decode this video'));
+    video.src = src;
+  });
+}
+
+function queueThumbnail(c, fractions = [0.2, 0.4, 0.6, 0.1]) {
+  if (thumbQueued.has(c.id)) return;
+  thumbQueued.add(c.id);
+  thumbQueue.push({ c, fractions });
+  runThumbQueue();
+}
+
+// Generate missing thumbnails for courses on screen (skips ones that failed for the same video)
+function queueMissingThumbnails(courses) {
+  const failed = readThumbFailures();
+  courses.forEach(c => {
+    if (c.thumbnailVersion || !c.firstVideo || c.exists === false) return;
+    if (failed[c.id] === c.firstVideo) return;
+    queueThumbnail(c);
+  });
+}
+
+async function runThumbQueue() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  while (thumbQueue.length) {
+    const { c, fractions } = thumbQueue.shift();
+    try {
+      const src = `/api/stream?path=${encodeURIComponent(`${c.path}/${c.firstVideo}`)}`;
+      const blob = await captureVideoFrame(src, fractions);
+      const res = await fetch(`/api/courses/${encodeURIComponent(c.id)}/thumbnail`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: blob
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      c.thumbnailVersion = data.thumbnailVersion;
+      c.thumbnailSource = 'video';
+      setThumbFailure(c.id, null);
+      applyThumbnail(c);
+    } catch (err) {
+      console.warn(`Coursair: no thumbnail for "${c.name}" (${err.message}); keeping the initials cover.`);
+      setThumbFailure(c.id, c.firstVideo);
+    } finally {
+      thumbQueued.delete(c.id);
+    }
+  }
+  thumbBusy = false;
+}
+
+// Menu action: grab a different frame from the first video
+async function refreshThumbnail(c) {
+  try { await fetch(`/api/courses/${encodeURIComponent(c.id)}/thumbnail`, { method: 'DELETE' }); } catch (e) {}
+  setThumbFailure(c.id, null);
+  const start = 0.1 + Math.random() * 0.6;
+  queueThumbnail(c, [start, Math.min(0.9, start + 0.15), Math.max(0.05, start - 0.1), 0.5]);
+}
+
 function renderDashboard() {
   const items = state.courses.map(c => ({ c, s: courseStats(c) }));
 
@@ -373,7 +537,7 @@ function renderDashboard() {
     const at = lw.time > 0 ? ` · ${formatTime(lw.time)} in` : '';
     dashContinue.innerHTML = `
       <a class="course-card-link" href="${courseHash(c.id)}" tabindex="-1" aria-hidden="true">
-        <div class="course-cover" style="${coverStyle(c.name)}">
+        <div class="course-cover" style="${coverStyle(c.name)}" data-thumb-for="${escapeHtml(c.id)}">${coverImage(c)}
           <span class="course-cover-initials">${escapeHtml(courseInitials(c.name))}</span>
         </div>
       </a>
@@ -422,6 +586,8 @@ function renderDashboard() {
     addCard.onclick = openCourseModal;
     dashGrid.appendChild(addCard);
   }
+
+  queueMissingThumbnails(items.map(i => i.c));
 }
 
 function createCourseCard(c, s) {
@@ -437,7 +603,7 @@ function createCourseCard(c, s) {
       : `<div class="course-card-last">Not started yet</div>`;
 
   const cover = `
-    <div class="course-cover" style="${coverStyle(c.name)}">
+    <div class="course-cover" style="${coverStyle(c.name)}" data-thumb-for="${escapeHtml(c.id)}">${coverImage(c)}
       <span class="course-cover-initials">${escapeHtml(courseInitials(c.name))}</span>
       <span class="course-cover-badge">${c.totalVideos || 0} video${c.totalVideos === 1 ? '' : 's'}</span>
       ${missing ? '' : `<span class="course-cover-play"><span>${PLAY_SVG}</span></span>`}
@@ -468,6 +634,7 @@ function createCourseCard(c, s) {
     menu.setAttribute('role', 'menu');
     menu.innerHTML = `
       ${missing ? '' : '<button type="button" data-act="open" role="menuitem">Open course</button>'}
+      ${missing || !c.firstVideo ? '' : '<button type="button" data-act="thumb" role="menuitem">Use a different video frame</button>'}
       <button type="button" data-act="copy" role="menuitem">Copy folder path</button>
       <button type="button" data-act="remove" class="danger" role="menuitem">Remove from library</button>
     `;
@@ -476,6 +643,7 @@ function createCourseCard(c, s) {
       const act = ev.target.closest('button') && ev.target.closest('button').dataset.act;
       closeCourseMenus();
       if (act === 'open') openCourse(c.id);
+      if (act === 'thumb') refreshThumbnail(c);
       if (act === 'copy') { try { await navigator.clipboard.writeText(c.path); } catch (err) {} }
       if (act === 'remove') removeCourse(c);
     };
