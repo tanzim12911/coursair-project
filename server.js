@@ -10,13 +10,46 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3600;
+const PORT = Number(process.env.PORT) || 3600;
+// Only this computer can reach Coursair unless HOST is set (e.g. HOST=0.0.0.0 for your LAN).
+const HOST = process.env.HOST || '127.0.0.1';
+const LOCAL_BIND = ['127.0.0.1', 'localhost', '::1'].includes(HOST);
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-app.use(express.json());
+app.disable('x-powered-by');
+
+// Reject requests addressed to some other hostname (DNS rebinding) while bound locally.
+app.use((req, res, next) => {
+  if (!LOCAL_BIND) return next();
+  const hostname = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+  if (LOCAL_HOSTNAMES.has(hostname) || hostname.endsWith('.localhost')) return next();
+  res.status(403).send('Forbidden: unexpected Host header');
+});
+
+// Reject changes sent by other websites open in the same browser.
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  try {
+    if (new URL(origin).host === req.headers.host) return next();
+  } catch (e) {}
+  res.status(403).json({ error: 'Cross-origin request blocked' });
+});
+
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+app.param(['id', 'courseId'], (req, res, next, value) => {
+  if (UNSAFE_KEYS.has(value)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 // Database file for storing registered courses and user progress
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.COURSAIR_DATA_DIR
+  ? path.resolve(process.env.COURSAIR_DATA_DIR)
+  : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'coursair-db.json');
 
 if (!fs.existsSync(DATA_DIR)) {
@@ -36,14 +69,20 @@ function loadDB() {
   try {
     return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
   } catch (e) {
-    console.error('Error reading DB, resetting to fallback:', e);
+    // Keep the unreadable file so no progress is silently lost.
+    const backup = DB_FILE.replace(/\.json$/, `.corrupt-${Date.now()}.json`);
+    try { fs.copyFileSync(DB_FILE, backup); } catch (err) {}
+    console.error(`Could not read ${DB_FILE}; a copy was saved to ${backup}. Starting with an empty library.`, e.message);
     return { courses: [], progress: {}, preferences: {} };
   }
 }
 
 function saveDB(data) {
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    // Write to a temp file first so a crash mid-write can't corrupt the database.
+    const tmp = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tmp, DB_FILE);
   } catch (e) {
     console.error('Error saving DB:', e);
   }
@@ -415,14 +454,14 @@ app.post('/api/pick-folder', async (req, res) => {
 function sanitizeProgress(p) {
   if (!p || typeof p !== 'object') return null;
   const out = { completed: {}, notes: [], positions: {}, lastWatched: null };
-  for (const [k, v] of Object.entries(p.completed || {})) if (v === true) out.completed[k] = true;
+  for (const [k, v] of Object.entries(p.completed || {})) if (v === true && !UNSAFE_KEYS.has(k)) out.completed[k] = true;
   for (const n of Array.isArray(p.notes) ? p.notes : []) {
     if (n && typeof n.id === 'string' && typeof n.text === 'string' && typeof n.lessonPath === 'string') {
       out.notes.push({ id: n.id, lessonPath: n.lessonPath, lessonTitle: String(n.lessonTitle || ''), time: Number(n.time) || 0, text: n.text, createdAt: n.createdAt || new Date().toISOString() });
     }
   }
   for (const [k, v] of Object.entries(p.positions || {})) {
-    if (v && typeof v === 'object') out.positions[k] = { time: Number(v.time) || 0, duration: Number(v.duration) || 0, updatedAt: v.updatedAt || new Date(0).toISOString() };
+    if (v && typeof v === 'object' && !UNSAFE_KEYS.has(k)) out.positions[k] = { time: Number(v.time) || 0, duration: Number(v.duration) || 0, updatedAt: v.updatedAt || new Date(0).toISOString() };
   }
   const lw = p.lastWatched;
   if (lw && typeof lw.path === 'string') out.lastWatched = { path: lw.path, title: String(lw.title || ''), time: Number(lw.time) || 0, duration: Number(lw.duration) || 0, updatedAt: lw.updatedAt || new Date(0).toISOString() };
@@ -557,54 +596,78 @@ app.get('/api/courses/:id/curriculum', (req, res) => {
   });
 });
 
+// File routes only serve files that live inside a course in the library.
+const comparablePath = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+function isInsideFolder(child, parent) {
+  const rel = path.relative(comparablePath(parent), comparablePath(child));
+  return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
+}
+function resolveCourseFile(requested) {
+  if (typeof requested !== 'string' || !requested) return null;
+  const full = path.resolve(requested);
+  const inLibrary = loadDB().courses.some(c => c.path && isInsideFolder(full, path.resolve(c.path)));
+  if (!inLibrary) return null;
+  try {
+    return fs.statSync(full).isFile() ? full : null;
+  } catch (e) {
+    return null;
+  }
+}
+function pipeFile(res, filePath, options) {
+  const stream = fs.createReadStream(filePath, options);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).end();
+    else res.destroy();
+  });
+  stream.pipe(res);
+}
+
 // 5. Video Range Streaming Endpoint (HTTP 206 Partial Content)
 app.get('/api/stream', (req, res) => {
-  const filePath = req.query.path;
-  if (!filePath || !fs.existsSync(filePath)) {
+  const filePath = resolveCourseFile(req.query.path);
+  if (!filePath) {
     return res.status(404).send('Media file not found');
   }
 
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
+  const fileSize = fs.statSync(filePath).size;
   const contentType = mime.lookup(filePath) || 'video/mp4';
+  const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
 
-  if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    if (start >= fileSize) {
-      res.status(416).send(`Requested range not satisfiable\n${start} >= ${fileSize}`);
-      return;
+  if (match && (match[1] || match[2])) {
+    let start, end;
+    if (match[1] === '') {
+      // Suffix range: the last N bytes
+      start = Math.max(0, fileSize - Number(match[2]));
+      end = fileSize - 1;
+    } else {
+      start = Number(match[1]);
+      end = match[2] ? Math.min(Number(match[2]), fileSize - 1) : fileSize - 1;
     }
-
-    const chunksize = end - start + 1;
-    const file = fs.createReadStream(filePath, { start, end });
-    const head = {
+    if (start >= fileSize || start > end) {
+      res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+      return res.end();
+    }
+    res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
       'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
+      'Content-Length': end - start + 1,
       'Content-Type': contentType
-    };
-
-    res.writeHead(206, head);
-    file.pipe(res);
+    });
+    pipeFile(res, filePath, { start, end });
   } else {
-    const head = {
+    res.writeHead(200, {
       'Content-Length': fileSize,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes'
-    };
-    res.writeHead(200, head);
-    fs.createReadStream(filePath).pipe(res);
+    });
+    pipeFile(res, filePath);
   }
 });
 
 // 6. Subtitle serving endpoint with automatic SRT to VTT conversion
 app.get('/api/subtitle', (req, res) => {
-  const filePath = req.query.path;
-  if (!filePath || !fs.existsSync(filePath)) {
+  const filePath = resolveCourseFile(req.query.path);
+  if (!filePath) {
     return res.status(404).send('Subtitle file not found');
   }
 
@@ -612,7 +675,7 @@ app.get('/api/subtitle', (req, res) => {
   res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
 
   if (ext === '.vtt') {
-    fs.createReadStream(filePath).pipe(res);
+    pipeFile(res, filePath);
   } else if (ext === '.srt') {
     const content = fs.readFileSync(filePath, 'utf-8');
     res.send(srtToVtt(content));
@@ -622,24 +685,29 @@ app.get('/api/subtitle', (req, res) => {
 });
 
 // 7. General File Server (PDFs, Markdown, Downloads)
+// Types a browser would run as a page; shown as plain text so course files can't script the app.
+const ACTIVE_CONTENT_TYPES = new Set(['text/html', 'application/xhtml+xml', 'image/svg+xml', 'text/xml', 'application/xml']);
+
 app.get('/api/file', (req, res) => {
-  const filePath = req.query.path;
+  const filePath = resolveCourseFile(req.query.path);
   const download = req.query.download === 'true';
 
-  if (!filePath || !fs.existsSync(filePath)) {
+  if (!filePath) {
     return res.status(404).send('File not found');
   }
 
   const mimeType = mime.lookup(filePath) || 'application/octet-stream';
-  res.setHeader('Content-Type', mimeType);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (download) {
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+    res.setHeader('Content-Type', mimeType);
+    res.attachment(path.basename(filePath));
   } else {
+    res.setHeader('Content-Type', ACTIVE_CONTENT_TYPES.has(mimeType) ? 'text/plain; charset=utf-8' : mimeType);
     res.setHeader('Content-Disposition', 'inline');
   }
 
-  fs.createReadStream(filePath).pipe(res);
+  pipeFile(res, filePath);
 });
 
 // 8. Progress & Notes API
@@ -663,7 +731,7 @@ app.post('/api/progress/:courseId', (req, res) => {
   // Update completion toggle
   if (completed) {
     const { relPath, status } = completed;
-    if (relPath) {
+    if (typeof relPath === 'string' && relPath && !UNSAFE_KEYS.has(relPath)) {
       if (status) {
         courseProg.completed[relPath] = true;
       } else {
@@ -682,7 +750,7 @@ app.post('/api/progress/:courseId', (req, res) => {
   }
 
   // Per-video resume position
-  if (position && typeof position.relPath === 'string') {
+  if (position && typeof position.relPath === 'string' && !UNSAFE_KEYS.has(position.relPath)) {
     if (!courseProg.positions) courseProg.positions = {};
     courseProg.positions[position.relPath] = {
       time: Math.max(0, Math.floor(Number(position.time) || 0)),
@@ -710,7 +778,7 @@ app.post('/api/progress/:courseId', (req, res) => {
   }
 
   // Update global preferences (e.g. speed, volume)
-  if (preferences) {
+  if (preferences && typeof preferences === 'object' && !Array.isArray(preferences)) {
     db.preferences = { ...db.preferences, ...preferences };
   }
 
@@ -720,21 +788,30 @@ app.post('/api/progress/:courseId', (req, res) => {
 
 // Helper: Common quick folders on Windows
 app.get('/api/system-folders', (req, res) => {
-  const userHome = process.env.USERPROFILE || process.env.HOME || 'C:\\';
+  const userHome = os.homedir();
   const folders = [
     { label: 'Downloads', path: path.join(userHome, 'Downloads') },
-    { label: 'Videos', path: path.join(userHome, 'Videos') },
+    { label: 'Videos', path: path.join(userHome, process.platform === 'darwin' ? 'Movies' : 'Videos') },
     { label: 'Documents', path: path.join(userHome, 'Documents') },
     { label: 'Desktop', path: path.join(userHome, 'Desktop') },
-    { label: 'C:\\ Drive', path: 'C:\\' }
+    ...(process.platform === 'win32' ? [{ label: 'C:\\ Drive', path: 'C:\\' }] : [])
   ].filter(f => fs.existsSync(f.path));
 
   res.json({ folders, samplePath: path.join(__dirname, 'sample-course') });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(` Coursair is flying high!`);
-  console.log(` Local Dashboard: http://localhost:${PORT}`);
-  console.log(`======================================================\n`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`\n  Coursair is running at http://localhost:${PORT}\n`);
+  if (!LOCAL_BIND) {
+    console.log(`  Listening on ${HOST}: other devices on your network can open your course files.`);
+    console.log(`  Only do this on a network you trust.\n`);
+  }
+});
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Stop the other program or run with PORT=<another port>.`);
+  } else {
+    console.error(err);
+  }
+  process.exit(1);
 });
